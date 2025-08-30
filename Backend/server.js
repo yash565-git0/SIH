@@ -11,13 +11,13 @@ const Cooperative = require('./cooperatives');
 const Manufacturer = require('./manufacturers');
 const Participant = require('./participants');
 const ProcessingFacility = require('./processing_facilities');
-
+require('dotenv').config();
 const app = express();
 const port = 3000;
 
 app.use(express.json());
 
-const dbURI = 'mongodb://localhost:27017/your-database-name';
+const dbURI = process.env.DB_URI;
 
 mongoose.connect(dbURI, {
     useNewUrlParser: true,
