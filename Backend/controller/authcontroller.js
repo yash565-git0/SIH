@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { User, Session } = require('./auth-models');
+const { User, Session } = require('../models/auth-models');
 const speakeasy = require('speakeasy');
 const rateLimit = require('express-rate-limit');
 
