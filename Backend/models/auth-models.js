@@ -3,28 +3,63 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Schema } = mongoose;
 
+const otpSchema = new Schema({
+  phoneNumber: { 
+    type: String, 
+    required: true,
+    match: /^\+[1-9]\d{1,14}$/ 
+  },
+  otpCode: { 
+    type: String, 
+    required: true,
+    length: 6
+  },
+  purpose: { 
+    type: String, 
+    enum: ['register', 'login', 'change_phone', 'password_reset'], 
+    required: true 
+  },
+  expiresAt: { 
+    type: Date, 
+    required: true 
+  },
+  attempts: { 
+    type: Number, 
+    default: 0,
+    max: 3
+  },
+  verified: { 
+    type: Boolean, 
+    default: false 
+  }
+}, { timestamps: true });
+
+// Indexes for OTP
+otpSchema.index({ phoneNumber: 1, purpose: 1 });
+otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Auto-delete expired OTPs
+
+const OTP = mongoose.model('OTP', otpSchema);
+
 // Consumer Schema (Base User Model)
 const consumerSchema = new Schema({
-  email: { 
+  phoneNumber: { 
     type: String, 
     required: true, 
     unique: true,
+    match: /^\+[1-9]\d{1,14}$/ // E.164 format validation
+  },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  email: { // Optional for notifications
+    type: String,
     lowercase: true,
     validate: {
       validator: function(v) {
-        return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
+        return !v || /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
       },
       message: 'Please enter a valid email'
     }
   },
-  password: { 
-    type: String, 
-    required: true,
-    minlength: 8
-  },
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  phoneNumber: String,
   address: {
     street: String,
     city: String,
@@ -45,37 +80,24 @@ const consumerSchema = new Schema({
   privacySettings: {
     shareLocation: { type: Boolean, default: false },
     sharePreferences: { type: Boolean, default: false },
-    marketingEmails: { type: Boolean, default: true }
+    marketingMessages: { type: Boolean, default: true }
   },
   isActive: { type: Boolean, default: true },
+  isPhoneVerified: { type: Boolean, default: false },
   lastLogin: { type: Date },
   refreshToken: { type: String },
-  passwordResetToken: { type: String },
-  passwordResetExpires: { type: Date },
   twoFactorSecret: { type: String },
   twoFactorEnabled: { type: Boolean, default: false },
   loginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Date }
 }, { timestamps: true });
 
-// Password hashing middleware
-consumerSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-// Password comparison method
-consumerSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
-// JWT token generation
+// JWT token generation for Consumer
 consumerSchema.methods.generateAccessToken = function() {
   return jwt.sign(
     { 
       userId: this._id, 
-      email: this.email, 
+      phoneNumber: this.phoneNumber, 
       userType: 'Consumer'
     },
     process.env.JWT_ACCESS_SECRET,
@@ -116,33 +138,32 @@ consumerSchema.methods.resetLoginAttempts = function() {
 };
 
 // Indexes
-consumerSchema.index({ email: 1 });
-consumerSchema.index({ firstName: 1, lastName: 1 });
 consumerSchema.index({ phoneNumber: 1 });
+consumerSchema.index({ firstName: 1, lastName: 1 });
+consumerSchema.index({ email: 1 }, { sparse: true });
 
 const Consumer = mongoose.model('Consumer', consumerSchema);
 
 // Manufacturer Model (Separate collection)
 const manufacturerSchema = new Schema({
-  email: { 
+  phoneNumber: { 
     type: String, 
     required: true, 
     unique: true,
+    match: /^\+[1-9]\d{1,14}$/ // E.164 format validation
+  },
+  companyName: { type: String, required: true },
+  businessRegistrationNumber: { type: String, required: true, unique: true },
+  email: { // Optional for business communications
+    type: String,
     lowercase: true,
     validate: {
       validator: function(v) {
-        return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
+        return !v || /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
       },
       message: 'Please enter a valid email'
     }
   },
-  password: { 
-    type: String, 
-    required: true,
-    minlength: 8
-  },
-  companyName: { type: String, required: true },
-  businessRegistrationNumber: { type: String, required: true, unique: true },
   address: {
     street: String,
     city: String,
@@ -153,7 +174,7 @@ const manufacturerSchema = new Schema({
   contactPerson: {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    phoneNumber: String,
+    alternatePhone: String,
     position: String
   },
   businessType: { 
@@ -170,6 +191,7 @@ const manufacturerSchema = new Schema({
   }],
   facilityIds: [{ type: Schema.Types.ObjectId, ref: 'ProcessingFacility' }],
   isVerified: { type: Boolean, default: false },
+  isPhoneVerified: { type: Boolean, default: false },
   verificationDate: Date,
   documents: [{
     type: String,
@@ -179,8 +201,6 @@ const manufacturerSchema = new Schema({
   isActive: { type: Boolean, default: true },
   lastLogin: { type: Date },
   refreshToken: { type: String },
-  passwordResetToken: { type: String },
-  passwordResetExpires: { type: Date },
   twoFactorSecret: { type: String },
   twoFactorEnabled: { type: Boolean, default: false },
   loginAttempts: { type: Number, default: 0 },
@@ -188,21 +208,11 @@ const manufacturerSchema = new Schema({
 }, { timestamps: true });
 
 // Add the same methods to manufacturer
-manufacturerSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-manufacturerSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
 manufacturerSchema.methods.generateAccessToken = function() {
   return jwt.sign(
     { 
       userId: this._id, 
-      email: this.email, 
+      phoneNumber: this.phoneNumber, 
       userType: 'Manufacturer'
     },
     process.env.JWT_ACCESS_SECRET,
@@ -241,7 +251,7 @@ manufacturerSchema.methods.resetLoginAttempts = function() {
   });
 };
 
-manufacturerSchema.index({ email: 1 });
+manufacturerSchema.index({ phoneNumber: 1 });
 manufacturerSchema.index({ businessRegistrationNumber: 1 });
 manufacturerSchema.index({ companyName: 1 });
 manufacturerSchema.index({ isVerified: 1 });
@@ -250,26 +260,25 @@ const Manufacturer = mongoose.model('Manufacturer', manufacturerSchema);
 
 // Farmer Union Model (Separate collection)
 const farmerUnionSchema = new Schema({
-  email: { 
+  phoneNumber: { 
     type: String, 
     required: true, 
     unique: true,
-    lowercase: true,
-    validate: {
-      validator: function(v) {
-        return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
-      },
-      message: 'Please enter a valid email'
-    }
-  },
-  password: { 
-    type: String, 
-    required: true,
-    minlength: 8
+    match: /^\+[1-9]\d{1,14}$/ // E.164 format validation
   },
   unionName: { type: String, required: true },
   registrationNumber: { type: String, required: true, unique: true },
   establishedYear: Number,
+  email: { // Optional for official communications
+    type: String,
+    lowercase: true,
+    validate: {
+      validator: function(v) {
+        return !v || /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
+      },
+      message: 'Please enter a valid email'
+    }
+  },
   address: {
     street: String,
     city: String,
@@ -280,7 +289,7 @@ const farmerUnionSchema = new Schema({
   contactPerson: {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    phoneNumber: String,
+    alternatePhone: String,
     position: String
   },
   memberCount: { type: Number, default: 0 },
@@ -295,12 +304,11 @@ const farmerUnionSchema = new Schema({
     certificateUrl: String
   }],
   isVerified: { type: Boolean, default: false },
+  isPhoneVerified: { type: Boolean, default: false },
   verificationDate: Date,
   isActive: { type: Boolean, default: true },
   lastLogin: { type: Date },
   refreshToken: { type: String },
-  passwordResetToken: { type: String },
-  passwordResetExpires: { type: Date },
   twoFactorSecret: { type: String },
   twoFactorEnabled: { type: Boolean, default: false },
   loginAttempts: { type: Number, default: 0 },
@@ -308,21 +316,11 @@ const farmerUnionSchema = new Schema({
 }, { timestamps: true });
 
 // Add the same methods to farmerUnion
-farmerUnionSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-farmerUnionSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
 farmerUnionSchema.methods.generateAccessToken = function() {
   return jwt.sign(
     { 
       userId: this._id, 
-      email: this.email, 
+      phoneNumber: this.phoneNumber, 
       userType: 'FarmerUnion'
     },
     process.env.JWT_ACCESS_SECRET,
@@ -361,7 +359,7 @@ farmerUnionSchema.methods.resetLoginAttempts = function() {
   });
 };
 
-farmerUnionSchema.index({ email: 1 });
+farmerUnionSchema.index({ phoneNumber: 1 });
 farmerUnionSchema.index({ registrationNumber: 1 });
 farmerUnionSchema.index({ unionName: 1 });
 farmerUnionSchema.index({ isVerified: 1 });
@@ -370,25 +368,24 @@ const FarmerUnion = mongoose.model('FarmerUnion', farmerUnionSchema);
 
 // Laboratory Model (Separate collection)
 const laboratorySchema = new Schema({
-  email: { 
+  phoneNumber: { 
     type: String, 
     required: true, 
     unique: true,
+    match: /^\+[1-9]\d{1,14}$/ // E.164 format validation
+  },
+  labName: { type: String, required: true },
+  licenseNumber: { type: String, required: true, unique: true },
+  email: { // Optional for lab reports and communications
+    type: String,
     lowercase: true,
     validate: {
       validator: function(v) {
-        return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
+        return !v || /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
       },
       message: 'Please enter a valid email'
     }
   },
-  password: { 
-    type: String, 
-    required: true,
-    minlength: 8
-  },
-  labName: { type: String, required: true },
-  licenseNumber: { type: String, required: true, unique: true },
   address: {
     street: String,
     city: String,
@@ -399,7 +396,7 @@ const laboratorySchema = new Schema({
   contactPerson: {
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
-    phoneNumber: String,
+    alternatePhone: String,
     position: String
   },
   accreditations: [{
@@ -422,13 +419,12 @@ const laboratorySchema = new Schema({
     nextCalibrationDue: Date
   }],
   isAccredited: { type: Boolean, default: false },
+  isPhoneVerified: { type: Boolean, default: false },
   accreditationDate: Date,
   qualityManagementSystem: String,
   isActive: { type: Boolean, default: true },
   lastLogin: { type: Date },
   refreshToken: { type: String },
-  passwordResetToken: { type: String },
-  passwordResetExpires: { type: Date },
   twoFactorSecret: { type: String },
   twoFactorEnabled: { type: Boolean, default: false },
   loginAttempts: { type: Number, default: 0 },
@@ -436,21 +432,11 @@ const laboratorySchema = new Schema({
 }, { timestamps: true });
 
 // Add the same methods to laboratory
-laboratorySchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
-
-laboratorySchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
 laboratorySchema.methods.generateAccessToken = function() {
   return jwt.sign(
     { 
       userId: this._id, 
-      email: this.email, 
+      phoneNumber: this.phoneNumber, 
       userType: 'Laboratory'
     },
     process.env.JWT_ACCESS_SECRET,
@@ -489,7 +475,7 @@ laboratorySchema.methods.resetLoginAttempts = function() {
   });
 };
 
-laboratorySchema.index({ email: 1 });
+laboratorySchema.index({ phoneNumber: 1 });
 laboratorySchema.index({ licenseNumber: 1 });
 laboratorySchema.index({ labName: 1 });
 laboratorySchema.index({ isAccredited: 1 });
@@ -511,10 +497,49 @@ sessionSchema.index({ refreshToken: 1 });
 
 const Session = mongoose.model('Session', sessionSchema);
 
+// Create a unified User model for easy querying across all user types
+const User = {
+  findOne: async (query) => {
+    // Try to find in all user collections
+    let user = await Consumer.findOne(query);
+    if (user) return { ...user.toObject(), userType: 'Consumer' };
+    
+    user = await Manufacturer.findOne(query);
+    if (user) return { ...user.toObject(), userType: 'Manufacturer' };
+    
+    user = await FarmerUnion.findOne(query);
+    if (user) return { ...user.toObject(), userType: 'FarmerUnion' };
+    
+    user = await Laboratory.findOne(query);
+    if (user) return { ...user.toObject(), userType: 'Laboratory' };
+    
+    return null;
+  },
+  
+  findById: async (id) => {
+    // Try to find in all user collections
+    let user = await Consumer.findById(id);
+    if (user) return { ...user.toObject(), userType: 'Consumer' };
+    
+    user = await Manufacturer.findById(id);
+    if (user) return { ...user.toObject(), userType: 'Manufacturer' };
+    
+    user = await FarmerUnion.findById(id);
+    if (user) return { ...user.toObject(), userType: 'FarmerUnion' };
+    
+    user = await Laboratory.findById(id);
+    if (user) return { ...user.toObject(), userType: 'Laboratory' };
+    
+    return null;
+  }
+};
+
 module.exports = {
   Consumer,
   Manufacturer,
   FarmerUnion,
   Laboratory,
-  Session
+  Session,
+  OTP,
+  User
 };
