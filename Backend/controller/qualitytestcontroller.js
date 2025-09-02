@@ -58,7 +58,7 @@ class QualityTestController {
 
       // Update batch with test reference
       batch.quality_test_ids.push(qualityTest._id.toString());
-      
+
       // Update batch status based on test results
       if (validation.status === 'FAILED') {
         batch.status = 'QUALITY_FAILED';
@@ -198,12 +198,12 @@ class QualityTestController {
       // Re-validate if result changed
       if (updates.result || updates.result_value) {
         const validation = await QualityTestController.validateTestResult(
-          test.test_type, 
-          test.result, 
-          test.result_value, 
+          test.test_type,
+          test.result,
+          test.result_value,
           test.units
         );
-        
+
         test.validation_status = validation.status;
         test.validation_notes = validation.notes;
         await test.save();
@@ -252,49 +252,59 @@ class QualityTestController {
       // Test type performance
       const testTypeStats = await QualityTest.aggregate([
         { $match: dateFilter },
-        { $group: {
-          _id: '$test_type',
-          total: { $sum: 1 },
-          passed: { $sum: { $cond: [{ $eq: ['$result', 'PASSED'] }, 1, 0] } },
-          failed: { $sum: { $cond: [{ $eq: ['$result', 'FAILED'] }, 1, 0] } }
-        }},
-        { $project: {
-          test_type: '$_id',
-          total: 1,
-          passed: 1,
-          failed: 1,
-          pass_rate: { $multiply: [{ $divide: ['$passed', '$total'] }, 100] }
-        }}
+        {
+          $group: {
+            _id: '$test_type',
+            total: { $sum: 1 },
+            passed: { $sum: { $cond: [{ $eq: ['$result', 'PASSED'] }, 1, 0] } },
+            failed: { $sum: { $cond: [{ $eq: ['$result', 'FAILED'] }, 1, 0] } }
+          }
+        },
+        {
+          $project: {
+            test_type: '$_id',
+            total: 1,
+            passed: 1,
+            failed: 1,
+            pass_rate: { $multiply: [{ $divide: ['$passed', '$total'] }, 100] }
+          }
+        }
       ]);
 
       // Lab performance
       const labPerformance = await QualityTest.aggregate([
         { $match: dateFilter },
-        { $group: {
-          _id: '$lab_id',
-          total_tests: { $sum: 1 },
-          avg_turnaround: { $avg: { $subtract: ['$updatedAt', '$timestamp'] } }
-        }},
+        {
+          $group: {
+            _id: '$lab_id',
+            total_tests: { $sum: 1 },
+            avg_turnaround: { $avg: { $subtract: ['$updatedAt', '$timestamp'] } }
+          }
+        },
         { $lookup: { from: 'qualitylabs', localField: '_id', foreignField: '_id', as: 'lab' } },
         { $unwind: '$lab' },
-        { $project: {
-          lab_name: '$lab.name',
-          total_tests: 1,
-          avg_turnaround_hours: { $divide: ['$avg_turnaround', 1000 * 60 * 60] }
-        }}
+        {
+          $project: {
+            lab_name: '$lab.name',
+            total_tests: 1,
+            avg_turnaround_hours: { $divide: ['$avg_turnaround', 1000 * 60 * 60] }
+          }
+        }
       ]);
 
       // Failed test trends
       const failedTestTrends = await QualityTest.aggregate([
         { $match: { ...dateFilter, result: 'FAILED' } },
-        { $group: {
-          _id: {
-            year: { $year: '$timestamp' },
-            month: { $month: '$timestamp' },
-            day: { $dayOfMonth: '$timestamp' }
-          },
-          count: { $sum: 1 }
-        }},
+        {
+          $group: {
+            _id: {
+              year: { $year: '$timestamp' },
+              month: { $month: '$timestamp' },
+              day: { $dayOfMonth: '$timestamp' }
+            },
+            count: { $sum: 1 }
+          }
+        },
         { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
       ]);
 
@@ -477,21 +487,21 @@ class QualityTestController {
     };
 
     const threshold = thresholds[test_type];
-    
+
     if (threshold && result_value && units) {
       const value = parseFloat(result_value);
-      
+
       if (threshold.max && value > threshold.max) {
         validation.status = 'FAILED';
         validation.notes.push(`Value ${value}${units} exceeds maximum limit of ${threshold.max}${threshold.units}`);
         validation.critical = threshold.critical;
       }
-      
+
       if (threshold.min && value < threshold.min) {
         validation.status = 'FAILED';
         validation.notes.push(`Value ${value}${units} below minimum requirement of ${threshold.min}${threshold.units}`);
       }
-      
+
       if (threshold.min_match && value < threshold.min_match) {
         validation.status = 'FAILED';
         validation.notes.push(`Match percentage ${value}% below minimum of ${threshold.min_match}%`);
@@ -512,15 +522,32 @@ class QualityTestController {
   // Utility method to calculate overall status
   static calculateOverallStatus(tests) {
     if (tests.length === 0) return 'NO_TESTS';
-    
+
     const hasFailed = tests.some(t => t.result === 'FAILED');
     const hasPending = tests.some(t => t.result === 'PENDING');
-    
+
     if (hasFailed) return 'FAILED';
     if (hasPending) return 'PENDING';
     return 'PASSED';
   }
+  static async deleteQualityTest(req, res) {
+    try {
+      const { testId } = req.params;
+      const test = await QualityTest.findByIdAndDelete(testId);
 
+      if (!test) {
+        return res.status(404).json({ error: 'Quality test not found' });
+      }
+
+      // Optional: Remove the reference from the batch document
+      await Batch.findByIdAndUpdate(test.batch_id, { $pull: { quality_test_ids: test._id } });
+
+      res.json({ message: 'Quality test deleted successfully' });
+    } catch (error) {
+      console.error('Delete quality test error:', error);
+      res.status(500).json({ error: 'Failed to delete quality test' });
+    }
+  }
   // Get test templates for different test types
   static async getTestTemplates(req, res) {
     try {
@@ -587,3 +614,4 @@ class QualityTestController {
     }
   }
 }
+module.exports = QualityTestController;
