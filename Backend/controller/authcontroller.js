@@ -1,13 +1,41 @@
 const jwt = require('jsonwebtoken');
-const { User, Session } = require('../models/auth-models');
+const { User, Session, OTP } = require('../models/auth-models');
 const speakeasy = require('speakeasy');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
+const twilio = require('twilio');
+
+// Twilio client
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+const sendSMS = async (phoneNumber, message) => {
+  try {
+    const response = await client.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phoneNumber
+    });
+    console.log(`SMS sent to ${phoneNumber}: SID ${response.sid}`);
+  } catch (err) {
+    console.error('Twilio SMS error:', err);
+    throw new Error('Failed to send SMS');
+  }
+};
 
 // Rate limiting for authentication endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // limit each IP to 5 requests per windowMs
   message: 'Too many authentication attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Rate limiting for OTP requests
+const otpLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 1, // limit each IP to 1 OTP request per minute
+  message: 'Too many OTP requests, please wait before requesting again',
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -58,37 +86,142 @@ const authorize = (...roles) => {
   };
 };
 
+// Utility function to generate OTP
+const generateOTP = () => {
+  return crypto.randomInt(100000, 999999).toString();
+};
+
+// Utility function to normalize phone number
+const normalizePhoneNumber = (phoneNumber) => {
+  // Remove all non-digits and add country code if missing
+  let normalized = phoneNumber.replace(/\D/g, '');
+  
+  // Add default country code (adjust as needed)
+  if (normalized.length === 10) {
+    normalized = '1' + normalized; // US/Canada default
+  }
+  
+  return '+' + normalized;
+};
+
 // Authentication Controllers
 class AuthController {
   
-  // User Registration
-  static async register(req, res) {
+  // Send OTP for Registration/Login
+  static async sendOTP(req, res) {
     try {
-      const { email, password, userType, ...userData } = req.body;
-
-      // Check if user already exists
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ error: 'User already exists with this email' });
+      const { phoneNumber, purpose } = req.body; // purpose: 'register' or 'login'
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ error: 'Phone number is required' });
       }
 
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
+      // Check if user exists for login, or doesn't exist for registration
+      const existingUser = await User.findOne({ phoneNumber: normalizedPhone });
+      
+      if (purpose === 'register' && existingUser) {
+        return res.status(400).json({ error: 'User already exists with this phone number' });
+      }
+      
+      if (purpose === 'login' && !existingUser) {
+        return res.status(404).json({ error: 'User not found with this phone number' });
+      }
+
+      // Generate OTP
+      const otpCode = generateOTP();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Save OTP to database
+      await OTP.findOneAndUpdate(
+        { phoneNumber: normalizedPhone, purpose },
+        { 
+          otpCode,
+          expiresAt,
+          attempts: 0,
+          verified: false
+        },
+        { upsert: true, new: true }
+      );
+
+      // Send SMS
+      const message = `Your verification code is: ${otpCode}. Valid for 10 minutes. Do not share this code.`;
+      await sendSMS(normalizedPhone, message);
+
+      res.json({ 
+        message: 'OTP sent successfully',
+        phoneNumber: normalizedPhone
+      });
+
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      res.status(500).json({ error: 'Failed to send OTP' });
+    }
+  }
+
+  // Verify OTP and Register User
+  static async register(req, res) {
+    try {
+      const { phoneNumber, otp, userType, ...userData } = req.body;
+
+      if (!phoneNumber || !otp) {
+        return res.status(400).json({ error: 'Phone number and OTP are required' });
+      }
+
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      // Find and verify OTP
+      const otpRecord = await OTP.findOne({ 
+        phoneNumber: normalizedPhone, 
+        purpose: 'register',
+        otpCode: otp,
+        expiresAt: { $gt: new Date() },
+        verified: false
+      });
+
+      if (!otpRecord) {
+        // Increment attempts if OTP exists but is wrong
+        await OTP.updateOne(
+          { phoneNumber: normalizedPhone, purpose: 'register' },
+          { $inc: { attempts: 1 } }
+        );
+        return res.status(400).json({ error: 'Invalid or expired OTP' });
+      }
+
+      // Check attempts limit
+      if (otpRecord.attempts >= 3) {
+        return res.status(429).json({ error: 'Too many failed attempts. Request a new OTP.' });
+      }
+
+      // Check if user already exists
+      const existingUser = await User.findOne({ phoneNumber: normalizedPhone });
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists with this phone number' });
+      }
+
+      // Mark OTP as verified
+      otpRecord.verified = true;
+      await otpRecord.save();
+
+      // Create user based on type
       let user;
       switch (userType) {
         case 'Manufacturer':
-          const { Manufacturer } = require('./auth-models');
-          user = new Manufacturer({ email, password, ...userData });
+          const { Manufacturer } = require('../models/auth-models');
+          user = new Manufacturer({ phoneNumber: normalizedPhone, ...userData });
           break;
         case 'Consumer':
-          const { Consumer } = require('./auth-models');
-          user = new Consumer({ email, password, ...userData });
+          const { Consumer } = require('../models/auth-models');
+          user = new Consumer({ phoneNumber: normalizedPhone, ...userData });
           break;
         case 'FarmerUnion':
-          const { FarmerUnion } = require('./auth-models');
-          user = new FarmerUnion({ email, password, ...userData });
+          const { FarmerUnion } = require('../models/auth-models');
+          user = new FarmerUnion({ phoneNumber: normalizedPhone, ...userData });
           break;
         case 'Laboratory':
-          const { Laboratory } = require('./auth-models');
-          user = new Laboratory({ email, password, ...userData });
+          const { Laboratory } = require('../models/auth-models');
+          user = new Laboratory({ phoneNumber: normalizedPhone, ...userData });
           break;
         default:
           return res.status(400).json({ error: 'Invalid user type' });
@@ -96,9 +229,12 @@ class AuthController {
 
       await user.save();
 
-      // Remove password from response
+      // Clean up OTP
+      await OTP.deleteOne({ _id: otpRecord._id });
+
+      // Remove sensitive data from response
       const userResponse = user.toObject();
-      delete userResponse.password;
+      delete userResponse.refreshToken;
 
       res.status(201).json({
         message: 'User registered successfully',
@@ -111,16 +247,45 @@ class AuthController {
     }
   }
 
-  // User Login
+  // Verify OTP and Login User
   static async login(req, res) {
     try {
-      const { email, password, twoFactorToken } = req.body;
+      const { phoneNumber, otp, twoFactorToken } = req.body;
 
-      // Find user and include password for comparison
-      const user = await User.findOne({ email }).select('+password');
+      if (!phoneNumber || !otp) {
+        return res.status(400).json({ error: 'Phone number and OTP are required' });
+      }
+
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      // Find and verify OTP
+      const otpRecord = await OTP.findOne({ 
+        phoneNumber: normalizedPhone, 
+        purpose: 'login',
+        otpCode: otp,
+        expiresAt: { $gt: new Date() },
+        verified: false
+      });
+
+      if (!otpRecord) {
+        // Increment attempts if OTP exists but is wrong
+        await OTP.updateOne(
+          { phoneNumber: normalizedPhone, purpose: 'login' },
+          { $inc: { attempts: 1 } }
+        );
+        return res.status(400).json({ error: 'Invalid or expired OTP' });
+      }
+
+      // Check attempts limit
+      if (otpRecord.attempts >= 3) {
+        return res.status(429).json({ error: 'Too many failed attempts. Request a new OTP.' });
+      }
+
+      // Find user
+      const user = await User.findOne({ phoneNumber: normalizedPhone });
       
       if (!user || !user.isActive) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(401).json({ error: 'User not found or inactive' });
       }
 
       // Check if account is locked
@@ -130,14 +295,7 @@ class AuthController {
         });
       }
 
-      // Verify password
-      const isPasswordValid = await user.comparePassword(password);
-      if (!isPasswordValid) {
-        await user.incLoginAttempts();
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-
-      // Two-factor authentication check
+      // Two-factor authentication check (if enabled)
       if (user.twoFactorEnabled) {
         if (!twoFactorToken) {
           return res.status(200).json({ 
@@ -157,6 +315,10 @@ class AuthController {
           return res.status(401).json({ error: 'Invalid two-factor authentication code' });
         }
       }
+
+      // Mark OTP as verified
+      otpRecord.verified = true;
+      await otpRecord.save();
 
       // Reset login attempts on successful login
       await user.resetLoginAttempts();
@@ -178,9 +340,11 @@ class AuthController {
         ipAddress: req.ip
       });
 
+      // Clean up OTP
+      await OTP.deleteOne({ _id: otpRecord._id });
+
       // Remove sensitive data from response
       const userResponse = user.toObject();
-      delete userResponse.password;
       delete userResponse.refreshToken;
       delete userResponse.twoFactorSecret;
 
@@ -197,7 +361,60 @@ class AuthController {
     }
   }
 
-  // Refresh Token
+  // Resend OTP
+  static async resendOTP(req, res) {
+    try {
+      const { phoneNumber, purpose } = req.body;
+
+      if (!phoneNumber) {
+        return res.status(400).json({ error: 'Phone number is required' });
+      }
+
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      // Check if there's a recent OTP request (rate limiting)
+      const recentOTP = await OTP.findOne({
+        phoneNumber: normalizedPhone,
+        purpose,
+        createdAt: { $gt: new Date(Date.now() - 60 * 1000) } // within last minute
+      });
+
+      if (recentOTP) {
+        return res.status(429).json({ error: 'Please wait before requesting another OTP' });
+      }
+
+      // Generate new OTP
+      const otpCode = generateOTP();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Save OTP to database
+      await OTP.findOneAndUpdate(
+        { phoneNumber: normalizedPhone, purpose },
+        { 
+          otpCode,
+          expiresAt,
+          attempts: 0,
+          verified: false
+        },
+        { upsert: true, new: true }
+      );
+
+      // Send SMS
+      const message = `Your verification code is: ${otpCode}. Valid for 10 minutes. Do not share this code.`;
+      await sendSMS(normalizedPhone, message);
+
+      res.json({ 
+        message: 'OTP resent successfully',
+        phoneNumber: normalizedPhone
+      });
+
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      res.status(500).json({ error: 'Failed to resend OTP' });
+    }
+  }
+
+  // Refresh Token (unchanged)
   static async refreshToken(req, res) {
     try {
       const { refreshToken } = req.body;
@@ -239,7 +456,7 @@ class AuthController {
     }
   }
 
-  // Logout
+  // Logout (unchanged)
   static async logout(req, res) {
     try {
       const { refreshToken } = req.body;
@@ -267,7 +484,7 @@ class AuthController {
       const userId = req.user._id;
       
       const secret = speakeasy.generateSecret({
-        name: `Fisheries App (${req.user.email})`,
+        name: `Fisheries App (${req.user.phoneNumber})`,
         issuer: 'Fisheries Traceability'
       });
 
@@ -321,7 +538,7 @@ class AuthController {
   // Get Current User Profile
   static async getProfile(req, res) {
     try {
-      const user = await User.findById(req.user._id).select('-password -refreshToken -twoFactorSecret');
+      const user = await User.findById(req.user._id).select('-refreshToken -twoFactorSecret');
       res.json({ user });
     } catch (error) {
       console.error('Get profile error:', error);
@@ -336,8 +553,7 @@ class AuthController {
       const updates = req.body;
 
       // Remove sensitive fields that shouldn't be updated directly
-      delete updates.password;
-      delete updates.email;
+      delete updates.phoneNumber; // Phone number changes should require OTP verification
       delete updates.refreshToken;
       delete updates.twoFactorSecret;
 
@@ -345,7 +561,7 @@ class AuthController {
         userId, 
         updates, 
         { new: true, runValidators: true }
-      ).select('-password -refreshToken -twoFactorSecret');
+      ).select('-refreshToken -twoFactorSecret');
 
       res.json({
         message: 'Profile updated successfully',
@@ -357,11 +573,64 @@ class AuthController {
       res.status(500).json({ error: 'Profile update failed' });
     }
   }
+
+  // Change Phone Number (requires OTP verification)
+  static async changePhoneNumber(req, res) {
+    try {
+      const { newPhoneNumber, otp } = req.body;
+      const userId = req.user._id;
+
+      if (!newPhoneNumber || !otp) {
+        return res.status(400).json({ error: 'New phone number and OTP are required' });
+      }
+
+      const normalizedPhone = normalizePhoneNumber(newPhoneNumber);
+
+      // Verify OTP for new phone number
+      const otpRecord = await OTP.findOne({ 
+        phoneNumber: normalizedPhone, 
+        purpose: 'change_phone',
+        otpCode: otp,
+        expiresAt: { $gt: new Date() },
+        verified: false
+      });
+
+      if (!otpRecord) {
+        return res.status(400).json({ error: 'Invalid or expired OTP' });
+      }
+
+      // Check if new phone number is already in use
+      const existingUser = await User.findOne({ phoneNumber: normalizedPhone });
+      if (existingUser && existingUser._id.toString() !== userId.toString()) {
+        return res.status(400).json({ error: 'Phone number already in use' });
+      }
+
+      // Update user's phone number
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { phoneNumber: normalizedPhone },
+        { new: true }
+      ).select('-refreshToken -twoFactorSecret');
+
+      // Mark OTP as verified and clean up
+      await OTP.deleteOne({ _id: otpRecord._id });
+
+      res.json({
+        message: 'Phone number updated successfully',
+        user
+      });
+
+    } catch (error) {
+      console.error('Change phone number error:', error);
+      res.status(500).json({ error: 'Failed to change phone number' });
+    }
+  }
 }
 
 module.exports = {
   AuthController,
   authenticateToken,
   authorize,
-  authLimiter
+  authLimiter,
+  otpLimiter
 };
