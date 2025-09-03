@@ -208,19 +208,19 @@ class AuthController {
       let user;
       switch (userType) {
         case 'Manufacturer':
-          const { Manufacturer } = require('./auth-models');
+          const { Manufacturer } = require('../models/auth-models');
           user = new Manufacturer({ phoneNumber: normalizedPhone, ...userData });
           break;
         case 'Consumer':
-          const { Consumer } = require('./auth-models');
+          const { Consumer } = require('../models/auth-models');
           user = new Consumer({ phoneNumber: normalizedPhone, ...userData });
           break;
         case 'FarmerUnion':
-          const { FarmerUnion } = require('./auth-models');
+          const { FarmerUnion } = require('../models/auth-models');
           user = new FarmerUnion({ phoneNumber: normalizedPhone, ...userData });
           break;
         case 'Laboratory':
-          const { Laboratory } = require('./auth-models');
+          const { Laboratory } = require('../models/auth-models');
           user = new Laboratory({ phoneNumber: normalizedPhone, ...userData });
           break;
         default:

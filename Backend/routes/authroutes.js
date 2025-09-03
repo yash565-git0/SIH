@@ -1,7 +1,6 @@
 const express = require('express');
 const { AuthController, authenticateToken, authorize, authLimiter, otpLimiter } = require('../controller/authcontroller');
 const { body, validationResult } = require('express-validator');
-
 const router = express.Router();
 
 // Validation middleware
@@ -462,5 +461,4 @@ router.post('/test-phone-format', [
     message: 'Phone number format test successful'
   });
 });
-
 module.exports = router;

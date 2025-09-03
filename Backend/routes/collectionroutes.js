@@ -2,7 +2,7 @@ const express = require("express");
 const { body, param } = require("express-validator");
 const router = express.Router();
 const CollectionController = require("../controller/collectioncontroller");
-
+const {authenticateToken}= require('../controller/authcontroller');
 const collectionValidation = [
   body("species_id").notEmpty().withMessage("Species ID is required"),
   body("collector_id").notEmpty().withMessage("Collector ID is required"),
@@ -11,10 +11,10 @@ const collectionValidation = [
   body("initial_quality_metrics").optional().isObject().withMessage("Quality metrics must be an object"),
 ];
 
-router.post("/", collectionValidation, CollectionController.createCollectionEvent);
+router.post("/",authenticateToken, collectionValidation, CollectionController.createCollectionEvent);
 router.get("/", CollectionController.getCollectionEvents);
 router.get("/:eventId", param("eventId").isMongoId(), CollectionController.getCollectionEventDetails); 
-router.put("/:eventId", param("eventId").isMongoId(), CollectionController.updateCollectionEvent); 
+router.put("/:eventId",authenticateToken, param("eventId").isMongoId(), CollectionController.updateCollectionEvent); 
 
 router.get("/statistics", CollectionController.getCollectionStatistics);
 router.post("/validate-compliance", CollectionController.validateHarvestCompliance);
