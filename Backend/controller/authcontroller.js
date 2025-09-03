@@ -3,21 +3,23 @@ const { User, Session, OTP } = require('../models/auth-models');
 const speakeasy = require('speakeasy');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const twilio = require('twilio');
 
-// You'll need to install and configure an SMS service like Twilio
-// const twilio = require('twilio');
-// const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+// Twilio client
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// Mock SMS service - replace with actual SMS provider
 const sendSMS = async (phoneNumber, message) => {
-  console.log(`Sending SMS to ${phoneNumber}: ${message}`);
-  // Replace this with actual SMS service integration
-  // For Twilio:
-  // await client.messages.create({
-  //   body: message,
-  //   from: process.env.TWILIO_PHONE_NUMBER,
-  //   to: phoneNumber
-  // });
+  try {
+    const response = await client.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phoneNumber
+    });
+    console.log(`SMS sent to ${phoneNumber}: SID ${response.sid}`);
+  } catch (err) {
+    console.error('Twilio SMS error:', err);
+    throw new Error('Failed to send SMS');
+  }
 };
 
 // Rate limiting for authentication endpoints
