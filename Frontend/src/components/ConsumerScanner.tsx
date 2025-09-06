@@ -1,69 +1,24 @@
-import React ,{ useState } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { Alert, AlertDescription } from './ui/alert';
 import { QrCode, Scan, CheckCircle, AlertTriangle, Package, MapPin, Calendar, User, Wheat, FlaskConical } from 'lucide-react';
+import { useQRScanner } from '../hooks/useQRScanner';
 
 interface ConsumerScannerProps {
   onLogout: () => void;
 }
 
-interface ProductInfo {
-  id: string;
-  name: string;
-  category: string;
-  origin: string;
-  harvestDate: string;
-  farmer: string;
-  processingCenter: string;
-  labTested: boolean;
-  certifications: string[];
-  status: 'authentic' | 'suspicious' | 'verified';
-}
-
 export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
-  const [isScanning, setIsScanning] = useState(false);
-  const [scannedProduct, setScannedProduct] = useState<ProductInfo | null>(null);
-  const [scanHistory, setScanHistory] = useState<ProductInfo[]>([]);
+  const { isScanning, scanResult, error, scanQRCode, simulateScan, clearResult } = useQRScanner();
+  const [scanHistory, setScanHistory] = useState<any[]>([]);
 
-  // Mock scan function - simulates QR code scanning
-  const handleScan = () => {
-    setIsScanning(true);
-    
-    // Simulate scanning delay
-    setTimeout(() => {
-      const mockProducts: ProductInfo[] = [
-        {
-          id: 'AYR-001-2024',
-          name: 'Ashwagandha Root Extract',
-          category: 'Herbal Supplement',
-          origin: 'Rajasthan, India',
-          harvestDate: '2024-01-15',
-          farmer: 'Ramesh Kumar',
-          processingCenter: 'AyurTech Processing Unit, Jaipur',
-          labTested: true,
-          certifications: ['Organic', 'FSSAI Approved', 'Ayush Certified'],
-          status: 'verified'
-        },
-        {
-          id: 'AYR-002-2024',
-          name: 'Turmeric Powder',
-          category: 'Spice & Medicine',
-          origin: 'Kerala, India',
-          harvestDate: '2024-02-10',
-          farmer: 'Lakshmi Nair',
-          processingCenter: 'Spice Valley Processing, Kochi',
-          labTested: true,
-          certifications: ['Organic', 'Fair Trade', 'Export Quality'],
-          status: 'authentic'
-        }
-      ];
-
-      const randomProduct = mockProducts[Math.floor(Math.random() * mockProducts.length)];
-      setScannedProduct(randomProduct);
-      setScanHistory(prev => [randomProduct, ...prev.slice(0, 4)]);
-      setIsScanning(false);
-    }, 2000);
+  const handleScan = async () => {
+    const result = await simulateScan('consumer');
+    if (result.success && result.data) {
+      setScanHistory(prev => [result.data, ...prev.slice(0, 4)]);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -99,7 +54,24 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
             <p className="text-slate-600">Verify authenticity of Ayurvedic products</p>
           </div>
         </div>
-    </div>
+        <Button
+          onClick={onLogout}
+          variant="outline"
+          className="mt-4 border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+        >
+          Logout
+        </Button>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mb-6">
+          <Alert className="border-red-200 bg-red-50">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">{error}</AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Scanner Section */}
@@ -115,8 +87,10 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
               <div className="w-64 h-64 mx-auto mb-6 bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-dashed border-emerald-300 rounded-2xl flex items-center justify-center relative overflow-hidden">
                 {isScanning ? (
                   <div className="animate-pulse">
-                    <div className="w-32 h-32 border-4 border-emerald-500 rounded-lg animate-scan">
-                      <div className="w-full h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent animate-scan-line"></div>
+                    <div className="w-32 h-32 border-4 border-emerald-500 rounded-lg relative">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-full h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent animate-pulse"></div>
+                      </div>
                     </div>
                     <p className="text-emerald-600 font-medium mt-4">Scanning...</p>
                   </div>
@@ -132,9 +106,12 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                 disabled={isScanning}
                 className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-8 py-3 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105"
               >
-                {isScanning ? 'Scanning...' : 'Start Scan'}
+                {isScanning ? 'Scanning...' : 'Start Scan (Demo)'}
                 <Scan className="w-5 h-5 ml-2" />
               </Button>
+              <p className="text-xs text-gray-500 mt-2">
+                Demo mode - simulates real QR code scanning
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -148,22 +125,22 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {scannedProduct ? (
+            {scanResult ? (
               <div className="space-y-6">
                 {/* Status Badge */}
                 <div className="flex items-center justify-center">
-                  <Badge className={`px-4 py-2 rounded-xl border ${getStatusColor(scannedProduct.status)} flex items-center space-x-2`}>
-                    {getStatusIcon(scannedProduct.status)}
-                    <span className="font-semibold capitalize">{scannedProduct.status}</span>
+                  <Badge className={`px-4 py-2 rounded-xl border ${getStatusColor(scanResult.status)} flex items-center space-x-2`}>
+                    {getStatusIcon(scanResult.status)}
+                    <span className="font-semibold capitalize">{scanResult.status}</span>
                   </Badge>
                 </div>
 
                 {/* Product Info */}
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-xl font-bold text-emerald-900">{scannedProduct.name}</h3>
-                    <p className="text-slate-600">{scannedProduct.category}</p>
-                    <p className="text-sm text-emerald-600 font-mono">{scannedProduct.id}</p>
+                    <h3 className="text-xl font-bold text-emerald-900">{scanResult.name}</h3>
+                    <p className="text-slate-600">{scanResult.category}</p>
+                    <p className="text-sm text-emerald-600 font-mono">{scanResult.id}</p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
@@ -171,7 +148,7 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                       <MapPin className="w-4 h-4 text-emerald-600" />
                       <div>
                         <p className="font-semibold text-emerald-900">Origin</p>
-                        <p className="text-sm text-slate-600">{scannedProduct.origin}</p>
+                        <p className="text-sm text-slate-600">{scanResult.origin}</p>
                       </div>
                     </div>
 
@@ -179,7 +156,7 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                       <Calendar className="w-4 h-4 text-amber-600" />
                       <div>
                         <p className="font-semibold text-amber-800">Harvest Date</p>
-                        <p className="text-sm text-slate-600">{scannedProduct.harvestDate}</p>
+                        <p className="text-sm text-slate-600">{scanResult.harvestDate}</p>
                       </div>
                     </div>
 
@@ -187,7 +164,7 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                       <Wheat className="w-4 h-4 text-teal-600" />
                       <div>
                         <p className="font-semibold text-teal-800">Farmer</p>
-                        <p className="text-sm text-slate-600">{scannedProduct.farmer}</p>
+                        <p className="text-sm text-slate-600">{scanResult.farmer}</p>
                       </div>
                     </div>
 
@@ -195,7 +172,7 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                       <FlaskConical className="w-4 h-4 text-purple-600" />
                       <div>
                         <p className="font-semibold text-purple-800">Lab Tested</p>
-                        <p className="text-sm text-slate-600">{scannedProduct.labTested ? 'Yes' : 'No'}</p>
+                        <p className="text-sm text-slate-600">{scanResult.labTested ? 'Yes' : 'No'}</p>
                       </div>
                     </div>
                   </div>
@@ -204,13 +181,24 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                   <div>
                     <p className="font-semibold text-emerald-900 mb-2">Certifications</p>
                     <div className="flex flex-wrap gap-2">
-                      {scannedProduct.certifications.map((cert, index) => (
+                      {scanResult.certifications?.map((cert: string, index: number) => (
                         <Badge key={index} className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg px-2 py-1">
                           {cert}
                         </Badge>
                       ))}
                     </div>
                   </div>
+                </div>
+
+                {/* Clear Button */}
+                <div className="text-center pt-4">
+                  <Button 
+                    onClick={clearResult}
+                    variant="outline"
+                    className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+                  >
+                    Clear Results
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -231,26 +219,26 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-  {scanHistory.map((product, index) => (
-    <div
-      key={index}
-      className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200"
-    >
-      <div className="flex items-start justify-between mb-2">
-        <h4 className="font-semibold text-emerald-900 text-sm">{product.name}</h4>
-        <Badge className={`text-xs ${getStatusColor(product.status)} flex items-center space-x-1`}>
-          {getStatusIcon(product.status)}
-          <span className="capitalize">{product.status}</span>
-        </Badge>
-      </div>
-      <p className="text-xs text-slate-600">{product.id}</p>
-      <p className="text-xs text-slate-500 mt-1">{product.origin}</p>
-    </div>
-  ))}
-</div>
-
+              {scanHistory.map((product, index) => (
+                <div
+                  key={index}
+                  className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="font-semibold text-emerald-900 text-sm">{product.name}</h4>
+                    <Badge className={`text-xs ${getStatusColor(product.status)} flex items-center space-x-1`}>
+                      {getStatusIcon(product.status)}
+                      <span className="capitalize">{product.status}</span>
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-600">{product.id}</p>
+                  <p className="text-xs text-slate-500 mt-1">{product.origin}</p>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
-      </div>}
-
+    </div>
+  );
+}
