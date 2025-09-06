@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Scan, 
   Shield, 
@@ -22,104 +22,21 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Progress } from './ui/progress';
-import { ImageWithFallback } from './figma/ImageWithFallback';
-
-interface ProductInfo {
-  id: string;
-  name: string;
-  scientificName: string;
-  batchId: string;
-  harvestDate: string;
-  expiryDate: string;
-  authenticity: number;
-  certifications: string[];
-  origin: {
-    farm: string;
-    location: string;
-    farmer: string;
-    gps: string;
-  };
-  quality: {
-    purity: number;
-    grade: string;
-    testResults: {
-      heavy_metals: string;
-      pesticides: string;
-      microbial: string;
-    };
-  };
-  sustainability: {
-    organic: boolean;
-    carbonFootprint: string;
-    waterUsage: string;
-    biodiversity: number;
-  };
-  journey: {
-    harvest: string;
-    processing: string;
-    testing: string;
-    packaging: string;
-    distribution: string;
-  };
-}
+import { Alert, AlertDescription } from './ui/alert';
+import { useQRScanner } from '../hooks/useQRScanner';
 
 export function ConsumerExperience() {
-  const [scanResult, setScanResult] = useState<ProductInfo | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+  const { isScanning, scanResult, error, scanQRCode, simulateScan, clearResult } = useQRScanner();
 
-  const mockProductData: ProductInfo = {
-    id: 'AY-ASH-2024-001',
-    name: 'Organic Ashwagandha Root Powder',
-    scientificName: 'Withania somnifera',
-    batchId: 'AW-2024-001-F1',
-    harvestDate: '2024-03-15',
-    expiryDate: '2026-03-15',
-    authenticity: 99.2,
-    certifications: ['USDA Organic', 'AYUSH Approved', 'ISO 22000', 'Non-GMO'],
-    origin: {
-      farm: 'Vidyaranya Organic Farm',
-      location: 'Mysore, Karnataka, India',
-      farmer: 'Ramesh Kumar',
-      gps: '12.2958°N, 76.6394°E'
-    },
-    quality: {
-      purity: 99.2,
-      grade: 'Premium A+',
-      testResults: {
-        heavy_metals: 'Below detection limit',
-        pesticides: 'Not detected',
-        microbial: 'Within safe limits'
-      }
-    },
-    sustainability: {
-      organic: true,
-      carbonFootprint: '0.8 kg CO2eq',
-      waterUsage: '12.5L per 100g',
-      biodiversity: 95
-    },
-    journey: {
-      harvest: '2024-03-15T06:30:00Z',
-      processing: '2024-03-18T09:15:00Z',
-      testing: '2024-03-20T14:30:00Z',
-      packaging: '2024-03-22T11:45:00Z',
-      distribution: '2024-03-25T16:20:00Z'
-    }
+  const handleScan = async () => {
+    await simulateScan('experience');
   };
 
-  const handleScan = () => {
-    setIsScanning(true);
-    // Simulate scanning process
-    setTimeout(() => {
-      setScanResult(mockProductData);
-      setIsScanning(false);
-    }, 2000);
-  };
-
-  const handleManualVerify = () => {
-    if (manualCode) {
-      setScanResult(mockProductData);
+  const handleManualVerify = async () => {
+    if (manualCode.trim()) {
+      await scanQRCode(manualCode.trim(), 'experience');
     }
   };
 
@@ -152,6 +69,14 @@ export function ConsumerExperience() {
           <div className="max-w-2xl mx-auto">
             <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-3xl shadow-2xl">
               <div className="text-center space-y-8">
+                {/* Error Display */}
+                {error && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    <AlertDescription className="text-red-800">{error}</AlertDescription>
+                  </Alert>
+                )}
+
                 {/* QR Scanner */}
                 <div className="relative">
                   <motion.div
@@ -191,7 +116,7 @@ export function ConsumerExperience() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-12 py-4 rounded-2xl shadow-lg"
                 >
                   <Camera className="w-5 h-5 mr-2" />
-                  {isScanning ? 'Scanning...' : 'Start Camera Scan'}
+                  {isScanning ? 'Scanning...' : 'Start Camera Scan (Demo)'}
                 </Button>
 
                 <div className="flex items-center">
@@ -209,9 +134,11 @@ export function ConsumerExperience() {
                       value={manualCode}
                       onChange={(e) => setManualCode(e.target.value)}
                       className="flex-1 h-12 rounded-xl border-emerald-200 focus:border-emerald-500"
+                      onKeyPress={(e) => e.key === 'Enter' && handleManualVerify()}
                     />
                     <Button 
                       onClick={handleManualVerify}
+                      disabled={isScanning || !manualCode.trim()}
                       className="bg-teal-600 hover:bg-teal-700 text-white px-6 rounded-xl"
                     >
                       Verify
@@ -248,7 +175,7 @@ export function ConsumerExperience() {
                             Batch: {scanResult.batchId}
                           </Badge>
                           <Badge variant="outline">
-                            Grade: {scanResult.quality.grade}
+                            Grade: {scanResult.quality?.grade || 'Premium'}
                           </Badge>
                         </div>
                       </div>
@@ -257,8 +184,8 @@ export function ConsumerExperience() {
                   
                   <div className="text-center">
                     <div className="mb-4">
-                      <div className={`text-4xl font-bold ${getAuthenticityColor(scanResult.authenticity)}`}>
-                        {scanResult.authenticity}%
+                      <div className={`text-4xl font-bold ${getAuthenticityColor(scanResult.authenticity || 99)}`}>
+                        {scanResult.authenticity || 99}%
                       </div>
                       <p className="text-gray-600">Authenticity Score</p>
                     </div>
@@ -324,19 +251,19 @@ export function ConsumerExperience() {
                       <div className="space-y-4">
                         <div className="flex justify-between">
                           <span className="text-gray-600">Farm:</span>
-                          <span className="font-semibold">{scanResult.origin.farm}</span>
+                          <span className="font-semibold">{scanResult.origin?.farm}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Farmer:</span>
-                          <span className="font-semibold">{scanResult.origin.farmer}</span>
+                          <span className="font-semibold">{scanResult.origin?.farmer}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Location:</span>
-                          <span className="font-semibold">{scanResult.origin.location}</span>
+                          <span className="font-semibold">{scanResult.origin?.location}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">GPS:</span>
-                          <span className="font-mono text-sm">{scanResult.origin.gps}</span>
+                          <span className="font-mono text-sm">{scanResult.origin?.gps}</span>
                         </div>
                       </div>
                     </Card>
@@ -348,7 +275,7 @@ export function ConsumerExperience() {
                         Certifications
                       </h4>
                       <div className="grid grid-cols-2 gap-3">
-                        {scanResult.certifications.map((cert, index) => (
+                        {scanResult.certifications?.map((cert: string, index: number) => (
                           <div key={index} className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
                             <div className="flex items-center">
                               <CheckCircle className="w-4 h-4 text-emerald-600 mr-2" />
@@ -361,7 +288,7 @@ export function ConsumerExperience() {
                   </motion.div>
                 )}
 
-                {activeTab === 'quality' && (
+                {activeTab === 'quality' && scanResult.quality && (
                   <motion.div
                     key="quality"
                     initial={{ opacity: 0, x: 20 }}
@@ -420,10 +347,96 @@ export function ConsumerExperience() {
                             </div>
                             <div className="flex justify-between">
                               <span className="font-semibold text-gray-700">Expiry Date</span>
-                              <span className="text-gray-600">{new Date(scanResult.expiryDate).toLocaleDateString()}</span>
+                              <span className="text-gray-600">{new Date(scanResult.expiryDate || '').toLocaleDateString()}</span>
                             </div>
                           </div>
                         </div>
+                      </div>
+                    </Card>
+                  </motion.div>
+                )}
+
+                {activeTab === 'sustainability' && scanResult.sustainability && (
+                  <motion.div
+                    key="sustainability"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                  >
+                    <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
+                      <h4 className="text-2xl font-bold text-emerald-700 mb-6 flex items-center">
+                        <Leaf className="w-6 h-6 mr-2" />
+                        Sustainability Impact
+                      </h4>
+                      
+                      <div className="grid lg:grid-cols-2 gap-8">
+                        <div className="text-center">
+                          <div className="w-20 h-20 mx-auto bg-emerald-100 rounded-full flex items-center justify-center mb-3">
+                            <span className="text-2xl font-bold text-emerald-600">
+                              {scanResult.sustainability.biodiversity || 95}
+                            </span>
+                          </div>
+                          <h3 className="font-semibold text-gray-900">Sustainability Score</h3>
+                          <p className="text-sm text-gray-600">Overall environmental impact rating</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <div className="p-4 bg-emerald-50 rounded-xl">
+                            <div className="flex justify-between">
+                              <span className="text-emerald-700">Carbon Footprint:</span>
+                              <span className="font-semibold text-emerald-800">{scanResult.sustainability.carbonFootprint}</span>
+                            </div>
+                          </div>
+                          <div className="p-4 bg-blue-50 rounded-xl">
+                            <div className="flex justify-between">
+                              <span className="text-blue-700">Water Usage:</span>
+                              <span className="font-semibold text-blue-800">{scanResult.sustainability.waterUsage}</span>
+                            </div>
+                          </div>
+                          <div className="p-4 bg-orange-50 rounded-xl">
+                            <div className="flex justify-between">
+                              <span className="text-orange-700">Organic Certified:</span>
+                              <span className="font-semibold text-orange-800">{scanResult.sustainability.organic ? 'Yes' : 'No'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  </motion.div>
+                )}
+
+                {activeTab === 'journey' && scanResult.journey && (
+                  <motion.div
+                    key="journey"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                  >
+                    <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
+                      <h4 className="text-2xl font-bold text-emerald-700 mb-6 flex items-center">
+                        <MapPin className="w-6 h-6 mr-2" />
+                        Supply Chain Journey
+                      </h4>
+                      
+                      <div className="space-y-6">
+                        {Object.entries(scanResult.journey).map(([step, timestamp], index) => (
+                          <div key={step} className="flex items-center space-x-4">
+                            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                              <CheckCircle className="w-5 h-5 text-emerald-600" />
+                            </div>
+                            <div className="flex-grow">
+                              <div className="flex items-center justify-between mb-1">
+                                <h4 className="font-medium text-gray-900 capitalize">{step.replace('_', ' ')}</h4>
+                                <Badge className="bg-emerald-100 text-emerald-800 text-xs">
+                                  Completed
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {new Date(timestamp as string).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </Card>
                   </motion.div>
@@ -433,7 +446,7 @@ export function ConsumerExperience() {
               {/* Back Button */}
               <div className="text-center mt-8">
                 <Button 
-                  onClick={() => setScanResult(null)}
+                  onClick={clearResult}
                   variant="outline"
                   size="lg"
                   className="border-emerald-300 text-emerald-600 hover:bg-emerald-50 px-8 py-3 rounded-2xl"
