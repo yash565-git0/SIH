@@ -1,21 +1,23 @@
-// middleware/authMiddleware.js
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
-// Verifies the JWT that YOUR server created and signed
+/**
+ * Middleware to authenticate app JWT token
+ */
 const authenticateAppToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  // Expect: Authorization: Bearer <token>
+  const authHeader = req.headers["authorization"];
+  const token = authHeader?.split(" ")[1]; // Optional chaining
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required.' });
+    return res.status(401).json({ error: "Access token required." });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // Attaches { userId, userType } to the request
+    req.user = decoded; // attaches { userId, userType }
     next();
-  } catch (error) {
-    return res.status(403).json({ error: 'Invalid or expired token.' });
+  } catch (err) {
+    return res.status(403).json({ error: "Invalid or expired token." });
   }
 };
 

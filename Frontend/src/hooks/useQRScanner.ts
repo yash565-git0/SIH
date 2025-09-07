@@ -1,80 +1,52 @@
 // Frontend/src/hooks/useQRScanner.ts
-
 import { useState, useCallback } from 'react';
-import { apiService, transformBatchToProductInfo, transformBatchToConsumerProduct } from '../services/api';
-
-interface ScanResult {
-  success: boolean;
-  data?: any;
-  error?: string;
-}
+import { apiService, transformBatchToConsumerProduct, transformBatchToProductInfo } from '../services/apiService';
 
 export const useQRScanner = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Scan QR code from backend
   const scanQRCode = useCallback(async (qrCodeValue: string, format: 'consumer' | 'experience' = 'consumer') => {
     setIsScanning(true);
     setError(null);
-    
+
     try {
-      // First try to scan the QR code
-      const scanResponse = await apiService.scanQRCode(qrCodeValue);
-      
-      if (scanResponse.success && scanResponse.data?.qr?.batchId) {
-        const batchData = scanResponse.data.qr.batchId;
-        
-        // Transform the data based on the required format
-        const transformedData = format === 'consumer' 
-          ? transformBatchToConsumerProduct(batchData)
-          : transformBatchToProductInfo(batchData);
-          
-        setScanResult(transformedData);
-        return { success: true, data: transformedData };
+      const response = await apiService.scanQRCode(qrCodeValue);
+
+      if (response.success && response.data?.qr?.batchId) {
+        const batch = response.data.qr.batchId;
+        const transformed = format === 'consumer'
+          ? transformBatchToConsumerProduct(batch)
+          : transformBatchToProductInfo(batch);
+
+        setScanResult(transformed);
+        return { success: true, data: transformed };
       } else {
-        throw new Error('Invalid QR code or batch not found');
+        throw new Error(response.message || 'QR code invalid or batch not found');
       }
     } catch (err: any) {
-      // If direct scan fails, try to get batch by ID (for demo purposes)
-      try {
-        const batchResponse = await apiService.getBatchDetails(qrCodeValue);
-        
-        if (batchResponse.traceability?.batch) {
-          const transformedData = format === 'consumer' 
-            ? transformBatchToConsumerProduct(batchResponse.traceability.batch)
-            : transformBatchToProductInfo(batchResponse.traceability.batch);
-            
-          setScanResult(transformedData);
-          return { success: true, data: transformedData };
-        }
-      } catch (secondErr) {
-        // If all fails, provide mock data for demo
-        console.warn('Using mock data for demo purposes');
-        const mockData = getMockProductData(format);
-        setScanResult(mockData);
-        return { success: true, data: mockData };
-      }
-      
-      const errorMessage = err.message || 'Failed to scan QR code';
-      setError(errorMessage);
-      return { success: false, error: errorMessage };
+      console.warn('Backend scan failed, falling back to mock data', err);
+
+      // Fallback: mock data
+      const mockData = getMockProductData(format);
+      setScanResult(mockData);
+      return { success: true, data: mockData };
     } finally {
       setIsScanning(false);
     }
   }, []);
 
+  // Demo scanning
   const simulateScan = useCallback(async (format: 'consumer' | 'experience' = 'consumer') => {
     setIsScanning(true);
     setError(null);
-    
-    // Simulate scanning delay
     await new Promise(resolve => setTimeout(resolve, 2000));
-    
+
     const mockData = getMockProductData(format);
     setScanResult(mockData);
     setIsScanning(false);
-    
     return { success: true, data: mockData };
   }, []);
 
@@ -93,7 +65,7 @@ export const useQRScanner = () => {
   };
 };
 
-// Mock data generators for demo purposes
+// --- Mock data for demo ---
 const getMockProductData = (format: 'consumer' | 'experience') => {
   const baseData = {
     id: 'AYR-001-2024',
@@ -126,27 +98,8 @@ const getMockProductData = (format: 'consumer' | 'experience') => {
     expiryDate: '2026-03-15',
     authenticity: 99.2,
     certifications: ['USDA Organic', 'AYUSH Approved', 'ISO 22000', 'Non-GMO'],
-    quality: {
-      purity: 99.2,
-      grade: 'Premium A+',
-      testResults: {
-        heavy_metals: 'Below detection limit',
-        pesticides: 'Not detected',
-        microbial: 'Within safe limits'
-      }
-    },
-    sustainability: {
-      organic: true,
-      carbonFootprint: '0.8 kg CO2eq',
-      waterUsage: '12.5L per 100g',
-      biodiversity: 95
-    },
-    journey: {
-      harvest: '2024-03-15T06:30:00Z',
-      processing: '2024-03-18T09:15:00Z',
-      testing: '2024-03-20T14:30:00Z',
-      packaging: '2024-03-22T11:45:00Z',
-      distribution: '2024-03-25T16:20:00Z'
-    }
+    quality: { purity: 99.2, grade: 'Premium A+', testResults: {} },
+    sustainability: { organic: true, carbonFootprint: '0.8 kg CO2eq', waterUsage: '12.5L', biodiversity: 95 },
+    journey: { harvest: '', processing: '', testing: '', packaging: '', distribution: '' }
   };
 };

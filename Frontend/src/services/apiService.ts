@@ -181,19 +181,15 @@ export const transformBatchToProductInfo = (batch: any): any => {
   };
 };
 
-export const transformBatchToConsumerProduct = (batch: any): any => {
-  return {
-    id: batch._id,
-    name: batch.species_id?.common_name || 'Ayurvedic Product',
-    category: 'Herbal Medicine',
-    origin: batch.current_location || 'India',
-    harvestDate: new Date(batch.createdAt).toISOString().split('T')[0],
-    farmer: 'Certified Farmer',
-    processingCenter: 'Certified Processing Unit',
-    labTested: !batch.recall_flag,
-    certifications: batch.recall_flag ? 
-      ['FSSAI Approved'] : 
-      ['Organic', 'FSSAI Approved', 'Ayush Certified'],
-    status: batch.recall_flag ? 'suspicious' : 'verified'
-  };
-};
+export const transformBatchToConsumerProduct = (batch: any) => ({
+  id: batch._id,
+  name: batch.species_id?.common_name || 'Ayurvedic Product',
+  category: 'Herbal Medicine',
+  origin: batch.current_location || 'India',
+  harvestDate: new Date(batch.createdAt).toISOString().split('T')[0],
+  farmer: 'Certified Farmer',
+  processingCenter: 'Certified Processing Unit',
+  labTested: !batch.recall_flag,
+  certifications: batch.recall_flag ? ['FSSAI Approved'] : ['Organic', 'FSSAI Approved', 'Ayush Certified'],
+  status: batch.recall_flag ? 'suspicious' : 'verified'
+});
