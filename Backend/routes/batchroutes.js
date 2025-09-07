@@ -2,7 +2,7 @@ const express = require("express");
 const { body, param } = require("express-validator");
 const router = express.Router();
 const BatchController = require("../controller/batchcontroller");
-const {authenticateToken}= require('../controller/authcontroller');
+const {authenticateAppToken}= require('../middleware/authMiddleware');
 const batchValidation = [
   body("collection_event_ids").isArray().withMessage("Collection events must be an array"), 
   body("species_id").notEmpty().withMessage("Species ID is required"),
@@ -11,7 +11,7 @@ const batchValidation = [
 ];
 
 router.post("/:batchId/processing-steps", 
-  authenticateToken,
+  authenticateAppToken,
   [
     param("batchId").isMongoId().withMessage("Invalid batch ID"),
     body("step_type").notEmpty().withMessage("Step type is required"),
@@ -21,16 +21,16 @@ router.post("/:batchId/processing-steps",
   ],
   BatchController.addProcessingStep
 );
-router.post("/",authenticateToken, batchValidation, BatchController.createBatch);
+router.post("/",authenticateAppToken, batchValidation, BatchController.createBatch);
 router.get("/", BatchController.getAllBatches);
 router.get("/:batchId", param("batchId").isMongoId(), BatchController.getBatchDetails);
-router.put("/:batchId/status",authenticateToken, param("batchId").isMongoId(), BatchController.updateBatchStatus);
+router.put("/:batchId/status",authenticateAppToken, param("batchId").isMongoId(), BatchController.updateBatchStatus);
 router.delete("/:batchId/recall", param("batchId").isMongoId(), BatchController.setRecallFlag);
 router.get("/analytics",
   BatchController.getBatchAnalytics
 );
 router.post("/:batchId/recall",
-  authenticateToken,
+  authenticateAppToken,
   [
     param("batchId").isMongoId().withMessage("Invalid batch ID"),
     body("recall_reason").notEmpty().withMessage("Recall reason is required"),

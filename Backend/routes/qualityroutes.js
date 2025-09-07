@@ -2,7 +2,7 @@ const express = require("express");
 const { body, param } = require("express-validator");
 const router = express.Router();
 const QualityTestController = require("../controller/qualitytestcontroller");
-const {authenticateToken}= require('../controller/authcontroller');
+const {authenticateAppToken}= require('../middleware/authMiddleware');
 const qualityValidation = [
   body("batch_id").notEmpty().withMessage("Batch ID is required"),
   body("test_type").notEmpty().withMessage("Test type is required"),
@@ -10,7 +10,7 @@ const qualityValidation = [
   body("timestamp").optional().isISO8601().withMessage("Invalid timestamp"),
 ];
 
-router.post("/",authenticateToken, qualityValidation, QualityTestController.submitTestResult); 
+router.post("/",authenticateAppToken, qualityValidation, QualityTestController.submitTestResult); 
 router.get("/", QualityTestController.getAllQualityTests);
 router.get("/analytics", QualityTestController.getQualityAnalytics);
 router.get("/batch/:batchId", param("batchId").isMongoId(), QualityTestController.getBatchQualityTests);

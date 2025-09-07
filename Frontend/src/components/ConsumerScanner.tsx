@@ -1,27 +1,28 @@
+// Frontend/src/components/ConsumerScanner.tsx
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { QrCode, Scan, CheckCircle, AlertTriangle, Package, MapPin, Calendar, User, Wheat, FlaskConical } from 'lucide-react';
-import { useQRScanner } from '../hooks/useQRScanner';
+import { QrCode, Scan, CheckCircle, AlertTriangle, Package, MapPin, Calendar, Wheat, FlaskConical } from 'lucide-react';
+import { useQRScanner, ConsumerProduct } from '../hooks/useQRScanner';
 
 interface ConsumerScannerProps {
   onLogout: () => void;
 }
 
 export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
-  const { isScanning, scanResult, error, scanQRCode, simulateScan, clearResult } = useQRScanner();
-  const [scanHistory, setScanHistory] = useState<any[]>([]);
+  const { isScanning, scanResult, error, simulateScan, clearResult } = useQRScanner();
+  const [scanHistory, setScanHistory] = useState<ConsumerProduct[]>([]);
 
   const handleScan = async () => {
-    const result = await simulateScan('consumer');
+    const result = await simulateScan();
     if (result.success && result.data) {
       setScanHistory(prev => [result.data, ...prev.slice(0, 4)]);
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: ConsumerProduct['status']) => {
     switch (status) {
       case 'verified': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
       case 'authentic': return 'bg-teal-100 text-teal-800 border-teal-300';
@@ -30,7 +31,7 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: ConsumerProduct['status']) => {
     switch (status) {
       case 'verified': return <CheckCircle className="w-4 h-4" />;
       case 'authentic': return <CheckCircle className="w-4 h-4" />;
@@ -84,21 +85,14 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
           </CardHeader>
           <CardContent>
             <div className="text-center">
-              <div className="w-64 h-64 mx-auto mb-6 bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-dashed border-emerald-300 rounded-2xl flex items-center justify-center relative overflow-hidden">
+              <div className="w-64 h-64 mx-auto mb-6 bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-dashed border-emerald-300 rounded-2xl flex items-center justify-center">
                 {isScanning ? (
-                  <div className="animate-pulse">
-                    <div className="w-32 h-32 border-4 border-emerald-500 rounded-lg relative">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-full h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent animate-pulse"></div>
-                      </div>
-                    </div>
-                    <p className="text-emerald-600 font-medium mt-4">Scanning...</p>
-                  </div>
+                  <p className="text-emerald-600 font-medium animate-pulse">Scanning...</p>
                 ) : (
-                  <div className="text-center">
+                  <>
                     <QrCode className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
                     <p className="text-emerald-600 font-medium">Tap to scan QR code</p>
-                  </div>
+                  </>
                 )}
               </div>
               <Button
@@ -109,9 +103,7 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
                 {isScanning ? 'Scanning...' : 'Start Scan (Demo)'}
                 <Scan className="w-5 h-5 ml-2" />
               </Button>
-              <p className="text-xs text-gray-500 mt-2">
-                Demo mode - simulates real QR code scanning
-              </p>
+              <p className="text-xs text-gray-500 mt-2">Demo mode - simulates real QR code scanning</p>
             </div>
           </CardContent>
         </Card>
@@ -127,78 +119,46 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
           <CardContent>
             {scanResult ? (
               <div className="space-y-6">
-                {/* Status Badge */}
                 <div className="flex items-center justify-center">
                   <Badge className={`px-4 py-2 rounded-xl border ${getStatusColor(scanResult.status)} flex items-center space-x-2`}>
                     {getStatusIcon(scanResult.status)}
                     <span className="font-semibold capitalize">{scanResult.status}</span>
                   </Badge>
                 </div>
-
-                {/* Product Info */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-emerald-900">{scanResult.name}</h3>
-                    <p className="text-slate-600">{scanResult.category}</p>
-                    <p className="text-sm text-emerald-600 font-mono">{scanResult.id}</p>
+                <div>
+                  <h3 className="text-xl font-bold text-emerald-900">{scanResult.name}</h3>
+                  <p className="text-slate-600">{scanResult.category}</p>
+                  <p className="text-sm text-emerald-600 font-mono">{scanResult.id}</p>
+                  <div className="flex items-center space-x-3 mt-2">
+                    <MapPin className="w-4 h-4 text-emerald-600" />
+                    <span className="text-sm text-slate-600">{scanResult.origin}</span>
                   </div>
-
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg">
-                      <MapPin className="w-4 h-4 text-emerald-600" />
-                      <div>
-                        <p className="font-semibold text-emerald-900">Origin</p>
-                        <p className="text-sm text-slate-600">{scanResult.origin}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg">
-                      <Calendar className="w-4 h-4 text-amber-600" />
-                      <div>
-                        <p className="font-semibold text-amber-800">Harvest Date</p>
-                        <p className="text-sm text-slate-600">{scanResult.harvestDate}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg">
-                      <Wheat className="w-4 h-4 text-teal-600" />
-                      <div>
-                        <p className="font-semibold text-teal-800">Farmer</p>
-                        <p className="text-sm text-slate-600">{scanResult.farmer}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg">
-                      <FlaskConical className="w-4 h-4 text-purple-600" />
-                      <div>
-                        <p className="font-semibold text-purple-800">Lab Tested</p>
-                        <p className="text-sm text-slate-600">{scanResult.labTested ? 'Yes' : 'No'}</p>
-                      </div>
-                    </div>
+                  <div className="flex items-center space-x-3 mt-1">
+                    <Calendar className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm text-slate-600">{scanResult.harvestDate}</span>
+                  </div>
+                  <div className="flex items-center space-x-3 mt-1">
+                    <Wheat className="w-4 h-4 text-teal-600" />
+                    <span className="text-sm text-slate-600">{scanResult.farmer}</span>
+                  </div>
+                  <div className="flex items-center space-x-3 mt-1">
+                    <FlaskConical className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm text-slate-600">{scanResult.labTested ? 'Lab Tested' : 'Not Tested'}</span>
                   </div>
 
                   {/* Certifications */}
-                  <div>
-                    <p className="font-semibold text-emerald-900 mb-2">Certifications</p>
+                  <div className="mt-2">
+                    <p className="font-semibold text-emerald-900 mb-1">Certifications:</p>
                     <div className="flex flex-wrap gap-2">
-                      {scanResult.certifications?.map((cert: string, index: number) => (
-                        <Badge key={index} className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg px-2 py-1">
-                          {cert}
-                        </Badge>
+                      {scanResult.certifications.map((cert, idx) => (
+                        <Badge key={idx} className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg px-2 py-1">{cert}</Badge>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                {/* Clear Button */}
                 <div className="text-center pt-4">
-                  <Button 
-                    onClick={clearResult}
-                    variant="outline"
-                    className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
-                  >
-                    Clear Results
-                  </Button>
+                  <Button onClick={clearResult} variant="outline" className="border-emerald-300 text-emerald-600 hover:bg-emerald-50">Clear Results</Button>
                 </div>
               </div>
             ) : (
@@ -219,11 +179,8 @@ export function ConsumerScanner({ onLogout }: ConsumerScannerProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {scanHistory.map((product, index) => (
-                <div
-                  key={index}
-                  className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200"
-                >
+              {scanHistory.map((product, idx) => (
+                <div key={idx} className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200">
                   <div className="flex items-start justify-between mb-2">
                     <h4 className="font-semibold text-emerald-900 text-sm">{product.name}</h4>
                     <Badge className={`text-xs ${getStatusColor(product.status)} flex items-center space-x-1`}>

@@ -1,3 +1,5 @@
+// Frontend/src/components/ConsumerPortal.tsx
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -7,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Search, MapPin, Calendar, Award, Star, Share2, Download, AlertCircle, CheckCircle, Leaf, Users, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { apiService } from '../services/api';
+import { apiService, transformBatchToProductInfo } from '../services/apiService';
+import { useQRScanner } from '../hooks/useQRScanner';
 import { Alert, AlertDescription } from './ui/alert';
 
 interface Product {
@@ -53,20 +56,27 @@ export function ConsumerPortal() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load batches from API
+  const { scanResult, scanQRCode, simulateScan, isScanning, error: scanError } = useQRScanner();
+
+  // Load initial batches from API
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    // If a QR scan result is available, add it to the products list
+    if (scanResult) {
+      const transformedProduct = transformScanToProduct(scanResult);
+      setProducts((prev) => [transformedProduct, ...prev]);
+      setSelectedProduct(transformedProduct);
+    }
+  }, [scanResult]);
 
   const loadProducts = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiService.getAllBatches({
-        limit: 10,
-        page: 1
-      });
-
+      const response = await apiService.getAllBatches({ limit: 10, page: 1 });
       if (response.batches) {
         const transformedProducts = response.batches.map((batch: any) => transformBatchToProduct(batch));
         setProducts(transformedProducts);
@@ -74,7 +84,6 @@ export function ConsumerPortal() {
     } catch (err: any) {
       console.error('Failed to load products:', err);
       setError('Failed to load products. Using sample data for demo.');
-      // Use sample data as fallback
       setProducts(getSampleProducts());
     } finally {
       setIsLoading(false);
@@ -82,9 +91,10 @@ export function ConsumerPortal() {
   };
 
   const transformBatchToProduct = (batch: any): Product => {
+    const productInfo = transformBatchToProductInfo(batch);
     return {
-      id: batch._id,
-      name: batch.species_id?.common_name || `Batch ${batch._id.substring(0, 8)}`,
+      id: productInfo.id,
+      name: productInfo.name,
       image: 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxheXVydmVkaWMlMjBoZXJicyUyMG1lZGljaW5hbCUyMHBsYW50c3xlbnwxfHx8fDE3NTY0NzgwODR8MA&ixlib=rb-4.1.0&q=80&w=400',
       manufacturer: 'AyurVedic Naturals Ltd.',
       rating: batch.recall_flag ? 3.5 : 4.8,
@@ -92,18 +102,16 @@ export function ConsumerPortal() {
       price: '₹' + (Math.floor(Math.random() * 2000) + 500),
       sustainability: {
         score: batch.recall_flag ? 75 : 92,
-        carbonFootprint: '0.8 kg CO₂ eq',
-        waterSaved: '15.2L per 100g',
+        carbonFootprint: productInfo.sustainability?.carbonFootprint || '0.8 kg CO₂ eq',
+        waterSaved: productInfo.sustainability?.waterUsage || '15.2L per 100g',
         farmersSupported: Math.floor(Math.random() * 10) + 3
       },
-      certifications: batch.recall_flag ? 
-        ['AYUSH Certified'] : 
-        ['AYUSH Certified', 'Organic India', 'Fair Trade', 'Sustainable Harvest'],
+      certifications: productInfo.certifications || ['AYUSH Certified'],
       origin: {
-        farm: 'Organic Farm Collective',
-        location: batch.current_location || 'India',
-        coordinates: '26.9124°N, 75.7873°E',
-        harvestDate: new Date(batch.createdAt).toISOString().split('T')[0]
+        farm: productInfo.origin?.farm || 'Organic Farm Collective',
+        location: productInfo.origin?.location || 'India',
+        coordinates: productInfo.origin?.gps || '26.9124°N, 75.7873°E',
+        harvestDate: productInfo.harvestDate || new Date(batch.createdAt).toISOString().split('T')[0]
       },
       journey: [
         { step: 'Harvest', location: batch.current_location || 'Farm', date: batch.createdAt, status: 'completed' },
@@ -118,11 +126,38 @@ export function ConsumerPortal() {
         freshness: batch.recall_flag ? 82 : 92,
         authenticity: batch.recall_flag ? 90 : 100
       },
-      activeCompounds: {
-        'Primary Compounds': batch.recall_flag ? '2.1%' : '2.8%',
-        'Total Alkaloids': '0.3%',
-        'Moisture Content': '6.2%'
-      }
+      activeCompounds: productInfo.activeCompounds || { 'Primary Compounds': '2.5%', 'Total Alkaloids': '0.3%', 'Moisture Content': '6.2%' }
+    };
+  };
+
+  const transformScanToProduct = (scanData: any): Product => {
+    // scanData comes directly from useQRScanner
+    return {
+      id: scanData.id,
+      name: scanData.name,
+      image: scanData.image || 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg',
+      manufacturer: scanData.processingCenter || 'AyurVedic Naturals Ltd.',
+      rating: 4.8,
+      reviews: Math.floor(Math.random() * 500) + 50,
+      price: '₹899',
+      sustainability: {
+        score: 92,
+        carbonFootprint: scanData.sustainability?.carbonFootprint || '0.8 kg CO₂ eq',
+        waterSaved: scanData.sustainability?.waterUsage || '15.2L per 100g',
+        farmersSupported: 5
+      },
+      certifications: scanData.certifications || ['AYUSH Certified'],
+      origin: {
+        farm: scanData.origin?.farm || 'Vidyaranya Organic Farm',
+        location: scanData.origin?.location || 'India',
+        coordinates: scanData.origin?.gps || '12.2958°N, 76.6394°E',
+        harvestDate: scanData.harvestDate || '2024-03-15'
+      },
+      journey: scanData.journey || [
+        { step: 'Harvest', location: scanData.origin?.farm || 'Farm', date: scanData.harvestDate || '2024-03-15', status: 'completed' }
+      ],
+      qualityMetrics: scanData.quality || { purity: 99, potency: 95, freshness: 92, authenticity: 99 },
+      activeCompounds: scanData.activeCompounds || { 'Primary Compounds': '2.8%', 'Total Alkaloids': '0.3%', 'Moisture Content': '6.2%' }
     };
   };
 
@@ -131,7 +166,7 @@ export function ConsumerPortal() {
       {
         id: 'ASH-001',
         name: 'Premium Ashwagandha Capsules',
-        image: 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxheXVydmVkaWMlMjBoZXJicyUyMG1lZGljaW5hbCUyMHBsYW50c3xlbnwxfHx8fDE3NTY0NzgwODR8MA&ixlib=rb-4.1.0&q=80&w=400',
+        image: 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg',
         manufacturer: 'AyurVedic Naturals Ltd.',
         rating: 4.8,
         reviews: 1247,
@@ -143,30 +178,10 @@ export function ConsumerPortal() {
           farmersSupported: 5
         },
         certifications: ['AYUSH Certified', 'Organic India', 'Fair Trade', 'Sustainable Harvest'],
-        origin: {
-          farm: 'Sunrise Organic Farm',
-          location: 'Rajasthan, India',
-          coordinates: '26.9124°N, 75.7873°E',
-          harvestDate: '2025-01-15'
-        },
-        journey: [
-          { step: 'Harvest', location: 'Rajasthan Farm', date: '2025-01-15', status: 'completed' },
-          { step: 'Processing', location: 'Jaipur Facility', date: '2025-01-16', status: 'verified' },
-          { step: 'Quality Testing', location: 'Mumbai Lab', date: '2025-01-18', status: 'verified' },
-          { step: 'Manufacturing', location: 'Bengaluru Plant', date: '2025-01-20', status: 'completed' },
-          { step: 'Distribution', location: 'Pan India', date: '2025-01-22', status: 'completed' }
-        ],
-        qualityMetrics: {
-          purity: 98,
-          potency: 95,
-          freshness: 92,
-          authenticity: 100
-        },
-        activeCompounds: {
-          'Withanolides': '2.8%',
-          'Total Alkaloids': '0.3%',
-          'Moisture Content': '6.2%'
-        }
+        origin: { farm: 'Sunrise Organic Farm', location: 'Rajasthan, India', coordinates: '26.9124°N, 75.7873°E', harvestDate: '2025-01-15' },
+        journey: [],
+        qualityMetrics: { purity: 98, potency: 95, freshness: 92, authenticity: 100 },
+        activeCompounds: { Withanolides: '2.8%', 'Total Alkaloids': '0.3%', 'Moisture Content': '6.2%' }
       }
     ];
   };
@@ -176,32 +191,23 @@ export function ConsumerPortal() {
       loadProducts();
       return;
     }
-
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiService.getAllBatches({
-        limit: 10,
-        page: 1
-      });
-
-      if (response.batches) {
-        const filtered = response.batches.filter((batch: any) => 
-          batch._id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          batch.species_id?.common_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          batch.current_location?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        
-        const transformedProducts = filtered.map((batch: any) => transformBatchToProduct(batch));
+      const response = await apiService.getAllBatches({ limit: 10, page: 1 });
+      const filtered = response.batches.filter((batch: any) =>
+        batch._id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        batch.species_id?.common_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      const transformedProducts = filtered.map((batch: any) => transformBatchToProduct(batch));
+      if (transformedProducts.length === 0) {
+        setError('No products found. Showing sample data.');
+        setProducts(getSampleProducts());
+      } else {
         setProducts(transformedProducts);
-        
-        if (transformedProducts.length === 0) {
-          setError('No products found matching your search. Showing sample results.');
-          setProducts(getSampleProducts());
-        }
       }
     } catch (err) {
-      setError('Search failed. Using sample data for demo.');
+      setError('Search failed. Using sample data.');
       setProducts(getSampleProducts());
     } finally {
       setIsLoading(false);

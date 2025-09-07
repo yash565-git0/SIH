@@ -1,75 +1,184 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Scan, 
-  Shield, 
-  Leaf, 
-  Award, 
-  MapPin, 
-  Calendar,
-  Thermometer,
-  Droplets,
-  CheckCircle,
-  AlertCircle,
-  Star,
-  Camera,
-  Download,
-  Share2,
-  Heart
-} from 'lucide-react';
-import { Card } from './ui/card';
+// Frontend/src/components/ConsumerExperience.tsx
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
-import { Progress } from './ui/progress';
 import { Alert, AlertDescription } from './ui/alert';
+import { QrReader as Scan } from 'react-qr-reader';
+import { Star, Leaf, Camera, Download, AlertCircle } from 'lucide-react';
+import { apiService } from '../services/apiService';
 import { useQRScanner } from '../hooks/useQRScanner';
 
+interface Product {
+  id: string;
+  name: string;
+  scientificName?: string;
+  batchId?: string;
+  image: string;
+  manufacturer: string;
+  rating: number;
+  reviews: number;
+  price: string;
+  sustainability: any;
+  certifications: string[];
+  origin: any;
+  journey: any[];
+  qualityMetrics?: any;
+  activeCompounds?: Record<string, string>;
+  authenticity?: number;
+  harvestDate?: string;
+  expiryDate?: string;
+}
+
 export function ConsumerExperience() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
-  const { isScanning, scanResult, error, scanQRCode, simulateScan, clearResult } = useQRScanner();
+  const [activeTab, setActiveTab] = useState<'overview' | 'journey' | 'quality' | 'sustainability'>('overview');
 
-  const handleScan = async () => {
-    await simulateScan('experience');
-  };
+  const { scanResult, scanQRCode, isScanning } = useQRScanner();
 
-  const handleManualVerify = async () => {
-    if (manualCode.trim()) {
-      await scanQRCode(manualCode.trim(), 'experience');
+  // Load products on mount
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  useEffect(() => {
+    if (scanResult) {
+      const transformed = transformScanToProduct(scanResult);
+      setProducts((prev) => [transformed, ...prev]);
+      setSelectedProduct(transformed);
+    }
+  }, [scanResult]);
+
+  const loadProducts = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getAllBatches({ limit: 10, page: 1 });
+      if (response.batches) {
+        const transformed = response.batches.map((batch: any) => transformBatchToProduct(batch));
+        setProducts(transformed);
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load products. Showing sample data.');
+      setProducts(getSampleProducts());
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const getAuthenticityColor = (score: number) => {
-    if (score >= 98) return 'text-emerald-600';
-    if (score >= 90) return 'text-amber-600';
+  const transformBatchToProduct = (batch: any): Product => ({
+    id: batch._id,
+    name: batch.species_id?.common_name || `Batch ${batch._id.substring(0, 8)}`,
+    scientificName: batch.species_id?.scientific_name,
+    batchId: batch.batchId,
+    image: batch.image || 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max',
+    manufacturer: batch.manufacturer || 'AyurVedic Naturals Ltd.',
+    rating: batch.recall_flag ? 3.5 : 4.8,
+    reviews: Math.floor(Math.random() * 1000) + 100,
+    price: '₹' + (Math.floor(Math.random() * 2000) + 500),
+    sustainability: batch.sustainability || { score: 92 },
+    certifications: batch.certifications || ['AYUSH Certified'],
+    origin: batch.origin || { farm: 'Organic Farm Collective', location: 'India', harvestDate: '2025-01-01' },
+    journey: batch.journey || [],
+    qualityMetrics: batch.qualityMetrics || { purity: 98, potency: 95, freshness: 92, authenticity: 100 },
+    activeCompounds: batch.activeCompounds || { Withanolides: '2.8%', 'Total Alkaloids': '0.3%' },
+    authenticity: batch.qualityMetrics?.authenticity || 99
+  });
+
+  const transformScanToProduct = (scanData: any): Product => ({
+    id: scanData.id,
+    name: scanData.name,
+    scientificName: scanData.scientificName,
+    batchId: scanData.batchId,
+    image: scanData.image || 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max',
+    manufacturer: scanData.manufacturer || 'AyurVedic Naturals Ltd.',
+    rating: 4.8,
+    reviews: Math.floor(Math.random() * 500) + 50,
+    price: '₹899',
+    sustainability: scanData.sustainability || { score: 92 },
+    certifications: scanData.certifications || ['AYUSH Certified'],
+    origin: scanData.origin || { farm: 'Vidyaranya Organic Farm', location: 'India', harvestDate: '2024-03-15' },
+    journey: scanData.journey || [],
+    qualityMetrics: scanData.qualityMetrics || { purity: 99, potency: 95, freshness: 92, authenticity: 99 },
+    activeCompounds: scanData.activeCompounds || { 'Primary Compounds': '2.8%', 'Total Alkaloids': '0.3%' },
+    authenticity: scanData.authenticity || 99,
+    harvestDate: scanData.harvestDate,
+    expiryDate: scanData.expiryDate
+  });
+
+  const getSampleProducts = (): Product[] => [
+    {
+      id: 'ASH-001',
+      name: 'Premium Ashwagandha Capsules',
+      image: 'https://images.unsplash.com/photo-1655275194063-08d11b6abea6?crop=entropy&cs=tinysrgb&fit=max',
+      manufacturer: 'AyurVedic Naturals Ltd.',
+      rating: 4.8,
+      reviews: 1247,
+      price: '₹899',
+      sustainability: { score: 92 },
+      certifications: ['AYUSH Certified', 'Organic India'],
+      origin: { farm: 'Sunrise Organic Farm', location: 'Rajasthan, India', harvestDate: '2025-01-15' },
+      journey: [],
+      qualityMetrics: { purity: 98, potency: 95, freshness: 92, authenticity: 100 },
+      activeCompounds: { Withanolides: '2.8%', 'Total Alkaloids': '0.3%' },
+      authenticity: 100
+    }
+  ];
+
+  const handleSelect = (product: Product) => setSelectedProduct(product);
+
+  const handleManualVerify = () => {
+    if (!manualCode.trim()) return;
+    const found = products.find(p => p.id === manualCode.trim());
+    if (found) setSelectedProduct(found);
+    else setError('Product code not found. Try scanning instead.');
+  };
+
+  const clearResult = () => {
+    setSelectedProduct(null);
+    setActiveTab('overview');
+    setManualCode('');
+  };
+
+  const getAuthenticityColor = (auth: number) => {
+    if (auth >= 90) return 'text-green-600';
+    if (auth >= 70) return 'text-yellow-500';
     return 'text-red-600';
   };
+
+  const Progress = ({ value }: { value: number }) => (
+    <div className="w-full bg-gray-200 h-3 rounded-full">
+      <motion.div className="h-3 rounded-full bg-emerald-600" initial={{ width: 0 }} animate={{ width: `${value}%` }} transition={{ duration: 1 }} />
+    </div>
+  );
+
+  const currentProduct = selectedProduct || (scanResult ? transformScanToProduct(scanResult) : null);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 py-20">
       <div className="container mx-auto px-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-16"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-16">
           <h2 className="text-5xl font-bold bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent mb-6">
             Verify Your Ayurvedic Products
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Scan or enter your product code to access complete transparency about 
-            your Ayurvedic herbs - from farm to pharmacy
+            Scan or enter your product code to access complete transparency about your Ayurvedic herbs - from farm to pharmacy
           </p>
         </motion.div>
 
-        {!scanResult ? (
-          /* Scanning Interface */
+        {!currentProduct ? (
+          // Scan / Manual Entry
           <div className="max-w-2xl mx-auto">
             <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-3xl shadow-2xl">
               <div className="text-center space-y-8">
-                {/* Error Display */}
                 {error && (
                   <Alert className="border-red-200 bg-red-50">
                     <AlertCircle className="h-4 w-4 text-red-600" />
@@ -77,46 +186,19 @@ export function ConsumerExperience() {
                   </Alert>
                 )}
 
-                {/* QR Scanner */}
                 <div className="relative">
-                  <motion.div
-                    className="w-64 h-64 mx-auto bg-gradient-to-br from-emerald-100 to-teal-100 rounded-3xl flex items-center justify-center border-4 border-dashed border-emerald-300"
-                    animate={isScanning ? { scale: [1, 1.05, 1] } : {}}
-                    transition={{ duration: 1, repeat: isScanning ? Infinity : 0 }}
-                  >
+                  <motion.div className="w-64 h-64 mx-auto bg-gradient-to-br from-emerald-100 to-teal-100 rounded-3xl flex items-center justify-center border-4 border-dashed border-emerald-300">
                     {isScanning ? (
-                      <div className="text-emerald-600">
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                        >
-                          <Scan className="w-16 h-16" />
-                        </motion.div>
-                        <p className="mt-4 font-semibold">Scanning...</p>
-                      </div>
+                      <p className="text-emerald-600 font-semibold">Scanning...</p>
                     ) : (
-                      <div className="text-emerald-600 text-center">
-                        <Scan className="w-16 h-16 mx-auto" />
-                        <p className="mt-4 font-semibold">Position QR Code Here</p>
-                      </div>
+                      <p className="text-emerald-600 font-semibold">Position QR Code Here</p>
                     )}
                   </motion.div>
-                  
-                  {/* Corner Brackets */}
-                  <div className="absolute top-4 left-4 w-8 h-8 border-l-4 border-t-4 border-emerald-500 rounded-tl-lg"></div>
-                  <div className="absolute top-4 right-4 w-8 h-8 border-r-4 border-t-4 border-emerald-500 rounded-tr-lg"></div>
-                  <div className="absolute bottom-4 left-4 w-8 h-8 border-l-4 border-b-4 border-emerald-500 rounded-bl-lg"></div>
-                  <div className="absolute bottom-4 right-4 w-8 h-8 border-r-4 border-b-4 border-emerald-500 rounded-br-lg"></div>
                 </div>
 
-                <Button 
-                  onClick={handleScan}
-                  disabled={isScanning}
-                  size="lg"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-12 py-4 rounded-2xl shadow-lg"
-                >
+                <Button onClick={scanQRCode} disabled={isScanning} size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-12 py-4 rounded-2xl shadow-lg">
                   <Camera className="w-5 h-5 mr-2" />
-                  {isScanning ? 'Scanning...' : 'Start Camera Scan (Demo)'}
+                  {isScanning ? 'Scanning...' : 'Start Camera Scan'}
                 </Button>
 
                 <div className="flex items-center">
@@ -125,339 +207,110 @@ export function ConsumerExperience() {
                   <div className="flex-1 h-px bg-emerald-200"></div>
                 </div>
 
-                {/* Manual Entry */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-800">Enter Product Code Manually</h3>
-                  <div className="flex space-x-4">
-                    <Input
-                      placeholder="Enter batch or product ID"
-                      value={manualCode}
-                      onChange={(e) => setManualCode(e.target.value)}
-                      className="flex-1 h-12 rounded-xl border-emerald-200 focus:border-emerald-500"
-                      onKeyPress={(e) => e.key === 'Enter' && handleManualVerify()}
-                    />
-                    <Button 
-                      onClick={handleManualVerify}
-                      disabled={isScanning || !manualCode.trim()}
-                      className="bg-teal-600 hover:bg-teal-700 text-white px-6 rounded-xl"
-                    >
-                      Verify
-                    </Button>
-                  </div>
-                  <p className="text-sm text-gray-500">
-                    Example: AY-ASH-2024-001 or AW-2024-001-F1
-                  </p>
+                  <Input placeholder="Enter batch or product ID" value={manualCode} onChange={(e) => setManualCode(e.target.value)} className="flex-1 h-12 rounded-xl border-emerald-200 focus:border-emerald-500" onKeyPress={(e) => e.key === 'Enter' && handleManualVerify()} />
+                  <Button onClick={handleManualVerify} disabled={isScanning || !manualCode.trim()} className="bg-teal-600 hover:bg-teal-700 text-white px-6 rounded-xl">Verify</Button>
                 </div>
               </div>
             </Card>
           </div>
         ) : (
-          /* Product Information Display */
-          <AnimatePresence>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="max-w-6xl mx-auto"
-            >
-              {/* Product Header */}
-              <Card className="p-8 mb-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-3xl shadow-2xl">
-                <div className="grid lg:grid-cols-3 gap-8 items-center">
-                  <div className="lg:col-span-2">
-                    <div className="flex items-center space-x-4 mb-4">
-                      <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
-                        <Leaf className="w-8 h-8 text-emerald-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-3xl font-bold text-emerald-700">{scanResult.name}</h3>
-                        <p className="text-lg text-gray-600 italic">{scanResult.scientificName}</p>
-                        <div className="flex items-center space-x-4 mt-2">
-                          <Badge className="bg-emerald-100 text-emerald-800">
-                            Batch: {scanResult.batchId}
-                          </Badge>
-                          <Badge variant="outline">
-                            Grade: {scanResult.quality?.grade || 'Premium'}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-center">
-                    <div className="mb-4">
-                      <div className={`text-4xl font-bold ${getAuthenticityColor(scanResult.authenticity || 99)}`}>
-                        {scanResult.authenticity || 99}%
-                      </div>
-                      <p className="text-gray-600">Authenticity Score</p>
-                    </div>
-                    <div className="flex justify-center space-x-2">
-                      <Button variant="outline" size="sm" className="rounded-xl">
-                        <Download className="w-4 h-4 mr-2" />
-                        Report
-                      </Button>
-                      <Button variant="outline" size="sm" className="rounded-xl">
-                        <Share2 className="w-4 h-4 mr-2" />
-                        Share
-                      </Button>
-                    </div>
+          // Product Details with Tabs
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-6xl mx-auto">
+            {/* Product List */}
+            <div className="flex space-x-4 overflow-x-auto py-4">
+              {products.map(p => (
+                <div key={p.id} onClick={() => handleSelect(p)} className={`cursor-pointer p-2 rounded-lg border ${selectedProduct?.id === p.id ? 'border-emerald-600' : 'border-gray-200'}`}>
+                  <img src={p.image} alt={p.name} className="w-20 h-20 object-cover rounded-lg"/>
+                  <p className="text-sm text-center">{p.name}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Product Card */}
+            <Card className="p-8 mb-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-3xl shadow-2xl">
+              <div className="grid lg:grid-cols-3 gap-8 items-center">
+                <div className="lg:col-span-2">
+                  <h3 className="text-3xl font-bold text-emerald-700">{currentProduct.name}</h3>
+                  <p className="text-lg text-gray-600 italic">{currentProduct.scientificName}</p>
+                  <div className="flex items-center space-x-4 mt-2">
+                    {currentProduct.batchId && <Badge className="bg-emerald-100 text-emerald-800">Batch: {currentProduct.batchId}</Badge>}
                   </div>
                 </div>
-              </Card>
-
-              {/* Tabs Navigation */}
-              <div className="flex justify-center mb-8">
-                <div className="bg-white rounded-2xl p-2 shadow-lg border border-emerald-100">
-                  {[
-                    { key: 'overview', label: 'Overview', icon: Shield },
-                    { key: 'journey', label: 'Journey', icon: MapPin },
-                    { key: 'quality', label: 'Quality', icon: Award },
-                    { key: 'sustainability', label: 'Sustainability', icon: Leaf }
-                  ].map((tab) => {
-                    const Icon = tab.icon;
-                    return (
-                      <Button
-                        key={tab.key}
-                        variant={activeTab === tab.key ? 'default' : 'ghost'}
-                        className={`px-6 py-3 rounded-xl transition-all duration-300 ${
-                          activeTab === tab.key 
-                            ? 'bg-emerald-600 text-white shadow-md' 
-                            : 'text-gray-600 hover:text-emerald-600'
-                        }`}
-                        onClick={() => setActiveTab(tab.key)}
-                      >
-                        <Icon className="w-4 h-4 mr-2" />
-                        {tab.label}
-                      </Button>
-                    );
-                  })}
+                <div className="text-center">
+                  <div className={`text-4xl font-bold ${getAuthenticityColor(currentProduct.authenticity || 99)}`}>
+                    {currentProduct.authenticity || 99}%
+                  </div>
+                  <p className="text-gray-600">Authenticity Score</p>
+                  <div className="flex justify-center space-x-2 mt-2">
+                    <Button variant="outline" size="sm" className="rounded-xl">
+                      <Download className="w-4 h-4 mr-1" /> Download Report
+                    </Button>
+                    <Button variant="outline" size="sm" className="rounded-xl" onClick={clearResult}>Scan Another</Button>
+                  </div>
                 </div>
               </div>
 
-              {/* Tab Content */}
-              <AnimatePresence mode="wait">
-                {activeTab === 'overview' && (
-                  <motion.div
-                    key="overview"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="grid lg:grid-cols-2 gap-8"
-                  >
-                    {/* Origin Information */}
-                    <Card className="p-6 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
-                      <h4 className="text-xl font-bold text-emerald-700 mb-4 flex items-center">
-                        <MapPin className="w-5 h-5 mr-2" />
-                        Origin Details
-                      </h4>
-                      <div className="space-y-4">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Farm:</span>
-                          <span className="font-semibold">{scanResult.origin?.farm}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Farmer:</span>
-                          <span className="font-semibold">{scanResult.origin?.farmer}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Location:</span>
-                          <span className="font-semibold">{scanResult.origin?.location}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">GPS:</span>
-                          <span className="font-mono text-sm">{scanResult.origin?.gps}</span>
-                        </div>
-                      </div>
-                    </Card>
+              {/* Tabs */}
+              <div className="mt-6">
+                <div className="flex space-x-4 border-b border-gray-200">
+                  {['overview','journey','quality','sustainability'].map(tab => (
+                    <button key={tab} className={`py-2 px-4 ${activeTab===tab ? 'border-b-2 border-emerald-600 font-semibold' : 'text-gray-500'}`} onClick={() => setActiveTab(tab as any)}>
+                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                  ))}
+                </div>
 
-                    {/* Certifications */}
-                    <Card className="p-6 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
-                      <h4 className="text-xl font-bold text-emerald-700 mb-4 flex items-center">
-                        <Award className="w-5 h-5 mr-2" />
-                        Certifications
-                      </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        {scanResult.certifications?.map((cert: string, index: number) => (
-                          <div key={index} className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-                            <div className="flex items-center">
-                              <CheckCircle className="w-4 h-4 text-emerald-600 mr-2" />
-                              <span className="text-emerald-800 font-medium text-sm">{cert}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-                  </motion.div>
-                )}
-
-                {activeTab === 'quality' && scanResult.quality && (
-                  <motion.div
-                    key="quality"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                  >
-                    <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
-                      <h4 className="text-2xl font-bold text-emerald-700 mb-6 flex items-center">
-                        <Award className="w-6 h-6 mr-2" />
-                        Quality Analysis
-                      </h4>
-                      
-                      <div className="grid lg:grid-cols-2 gap-8">
-                        <div className="space-y-6">
-                          <div>
-                            <div className="flex justify-between mb-3">
-                              <span className="font-semibold text-gray-700">Purity Level</span>
-                              <span className="font-bold text-emerald-600">{scanResult.quality.purity}%</span>
-                            </div>
-                            <Progress value={scanResult.quality.purity} className="h-3" />
-                          </div>
-                          
-                          <div className="p-4 bg-emerald-50 rounded-xl">
-                            <h5 className="font-semibold text-emerald-800 mb-3">Test Results</h5>
-                            <div className="space-y-2">
-                              <div className="flex justify-between">
-                                <span className="text-emerald-700">Heavy Metals:</span>
-                                <span className="font-semibold text-emerald-800">{scanResult.quality.testResults.heavy_metals}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-emerald-700">Pesticides:</span>
-                                <span className="font-semibold text-emerald-800">{scanResult.quality.testResults.pesticides}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-emerald-700">Microbial:</span>
-                                <span className="font-semibold text-emerald-800">{scanResult.quality.testResults.microbial}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div className="p-4 bg-white border border-emerald-200 rounded-xl">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-gray-700">Product Grade</span>
-                              <Badge className="bg-emerald-600 text-white">
-                                {scanResult.quality.grade}
-                              </Badge>
-                            </div>
-                          </div>
-                          
-                          <div className="p-4 bg-white border border-emerald-200 rounded-xl">
-                            <div className="flex justify-between mb-2">
-                              <span className="font-semibold text-gray-700">Harvest Date</span>
-                              <span className="text-gray-600">{new Date(scanResult.harvestDate).toLocaleDateString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-gray-700">Expiry Date</span>
-                              <span className="text-gray-600">{new Date(scanResult.expiryDate || '').toLocaleDateString()}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                )}
-
-                {activeTab === 'sustainability' && scanResult.sustainability && (
-                  <motion.div
-                    key="sustainability"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                  >
-                    <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
-                      <h4 className="text-2xl font-bold text-emerald-700 mb-6 flex items-center">
-                        <Leaf className="w-6 h-6 mr-2" />
-                        Sustainability Impact
-                      </h4>
-                      
-                      <div className="grid lg:grid-cols-2 gap-8">
-                        <div className="text-center">
-                          <div className="w-20 h-20 mx-auto bg-emerald-100 rounded-full flex items-center justify-center mb-3">
-                            <span className="text-2xl font-bold text-emerald-600">
-                              {scanResult.sustainability.biodiversity || 95}
-                            </span>
-                          </div>
-                          <h3 className="font-semibold text-gray-900">Sustainability Score</h3>
-                          <p className="text-sm text-gray-600">Overall environmental impact rating</p>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          <div className="p-4 bg-emerald-50 rounded-xl">
-                            <div className="flex justify-between">
-                              <span className="text-emerald-700">Carbon Footprint:</span>
-                              <span className="font-semibold text-emerald-800">{scanResult.sustainability.carbonFootprint}</span>
-                            </div>
-                          </div>
-                          <div className="p-4 bg-blue-50 rounded-xl">
-                            <div className="flex justify-between">
-                              <span className="text-blue-700">Water Usage:</span>
-                              <span className="font-semibold text-blue-800">{scanResult.sustainability.waterUsage}</span>
-                            </div>
-                          </div>
-                          <div className="p-4 bg-orange-50 rounded-xl">
-                            <div className="flex justify-between">
-                              <span className="text-orange-700">Organic Certified:</span>
-                              <span className="font-semibold text-orange-800">{scanResult.sustainability.organic ? 'Yes' : 'No'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                )}
-
-                {activeTab === 'journey' && scanResult.journey && (
-                  <motion.div
-                    key="journey"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                  >
-                    <Card className="p-8 bg-white/80 backdrop-blur-sm border-emerald-100 rounded-2xl shadow-lg">
-                      <h4 className="text-2xl font-bold text-emerald-700 mb-6 flex items-center">
-                        <MapPin className="w-6 h-6 mr-2" />
-                        Supply Chain Journey
-                      </h4>
-                      
-                      <div className="space-y-6">
-                        {Object.entries(scanResult.journey).map(([step, timestamp], index) => (
-                          <div key={step} className="flex items-center space-x-4">
-                            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
-                              <CheckCircle className="w-5 h-5 text-emerald-600" />
-                            </div>
-                            <div className="flex-grow">
-                              <div className="flex items-center justify-between mb-1">
-                                <h4 className="font-medium text-gray-900 capitalize">{step.replace('_', ' ')}</h4>
-                                <Badge className="bg-emerald-100 text-emerald-800 text-xs">
-                                  Completed
-                                </Badge>
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                {new Date(timestamp as string).toLocaleString()}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Back Button */}
-              <div className="text-center mt-8">
-                <Button 
-                  onClick={clearResult}
-                  variant="outline"
-                  size="lg"
-                  className="border-emerald-300 text-emerald-600 hover:bg-emerald-50 px-8 py-3 rounded-2xl"
-                >
-                  Scan Another Product
-                </Button>
+                <div className="mt-4">
+                  {activeTab === 'overview' && <OverviewTab product={currentProduct} />}
+                  {activeTab === 'journey' && <JourneyTab product={currentProduct} />}
+                  {activeTab === 'quality' && <QualityTab product={currentProduct} />}
+                  {activeTab === 'sustainability' && <SustainabilityTab product={currentProduct} />}
+                </div>
               </div>
-            </motion.div>
-          </AnimatePresence>
+            </Card>
+          </motion.div>
         )}
       </div>
     </div>
   );
 }
+
+// Placeholder tab components — replace with your actual ConsumerPortal content
+const OverviewTab = ({ product }: { product: Product }) => (
+  <div>
+    <h4 className="font-semibold text-emerald-700 mb-2">Overview</h4>
+    <p>{product.manufacturer} | Price: {product.price}</p>
+  </div>
+);
+const JourneyTab = ({ product }: { product: Product }) => (
+  <div>
+    <h4 className="font-semibold text-emerald-700 mb-2">Journey</h4>
+    <ul className="list-disc pl-5">
+      {product.journey.map((j, i) => <li key={i}>{j.step} at {j.location} ({j.status})</li>)}
+    </ul>
+  </div>
+);
+const QualityTab = ({ product }: { product: Product }) => (
+  <div>
+    <h4 className="font-semibold text-emerald-700 mb-2">Quality</h4>
+    {product.qualityMetrics && Object.entries(product.qualityMetrics).map(([k,v]) => (
+      <div key={k} className="flex justify-between my-1">
+        <span>{k}</span>
+        <Progress value={v as number} />
+      </div>
+    ))}
+  </div>
+);
+const SustainabilityTab = ({ product }: { product: Product }) => (
+  <div>
+    <h4 className="font-semibold text-emerald-700 mb-2">Sustainability</h4>
+    <p>Score: {product.sustainability.score}%</p>
+  </div>
+);
+
+const Progress = ({ value }: { value: number }) => (
+  <div className="w-full bg-gray-200 h-3 rounded-full my-1">
+    <motion.div className="h-3 rounded-full bg-emerald-600" initial={{ width: 0 }} animate={{ width: `${value}%` }} transition={{ duration: 1 }} />
+  </div>
+);
